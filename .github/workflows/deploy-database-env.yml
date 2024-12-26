@@ -18,7 +18,8 @@ jobs:
 
       - name: Install gh-ost
         run: |
-          wget https://github.com/github/gh-ost/releases/latest/download/gh-ost-linux-amd64 -O gh-ost
+          wget https://github.com/github/gh-ost/releases/latest/download/gh-ost-binary-linux-amd64.tar.gz
+          tar -xzf gh-ost-binary-linux-amd64.tar.gz
           chmod +x gh-ost
           sudo mv gh-ost /usr/local/bin/
 
