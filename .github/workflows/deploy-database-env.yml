@@ -18,7 +18,7 @@ jobs:
 
       - name: Install gh-ost
         run: |
-          wget https://github.com/github/gh-ost/releases/download/v1.1.4/gh-ost-linux-amd64 -O gh-ost # Update to latest version
+          wget https://github.com/github/gh-ost/releases/latest/download/gh-ost-linux-amd64 -O gh-ost
           chmod +x gh-ost
           sudo mv gh-ost /usr/local/bin/
 
