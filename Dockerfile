@@ -12,8 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install PHP and extensions
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    php8.1 \ # Or your desired PHP version
-    php8.1-cli \
+    php8.1 \  # Base PHP installation
+    php8.1-cli \  # Additional packages
     php8.1-fpm \
     php8.1-mysql \
     php8.1-pgsql \
