@@ -8,19 +8,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libzip-dev \
     zip \
     libpq-dev \
-    mysql-client # Add mysql-client
+    mysql-client
 
-# Install PHP and extensions (separate base and additional packages)
+# Install PHP and extensions (using a single apt-get command)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    php8.1 \  # Base PHP installation
-    php8.1-cli \  # Additional packages (CLI tools)
-    php8.1-fpm \  # Web server process manager (if applicable)
-    php8.1-mysql \  # MySQL database driver
-    php8.1-pgsql \  # PostgreSQL database driver (if needed)
-    php8.1-zip \   # ZIP archive support
-    php8.1-bcmath \  # Arbitrary precision math library
-    php8.1-mbstring \  # Multi-byte string functions
-    php8.1-xml \   # XML processing extension
+    php8.1 \
+    php8.1-cli \
+    php8.1-fpm \
+    php8.1-mysql \
+    php8.1-pgsql \
+    php8.1-zip \
+    php8.1-bcmath \
+    php8.1-mbstring \
+    php8.1-xml \
+    php8.1-gd # Often needed for image processing
 
 # Download and install gh-ost (specific version)
 WORKDIR /tmp
@@ -30,20 +31,20 @@ WORKDIR /tmp/gh-ost-1.1.7
 RUN make
 RUN cp gh-ost /usr/local/bin
 
-# Set working directory for the application
-WORKDIR /app
-
-# Copy application files
-COPY . /app
-
 # Install Composer
 RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 
-# Set permissions (if needed)
+# Set working directory for the application
+WORKDIR /app
+
+# Copy application files (AFTER setting the working directory)
+COPY . /app
+
+# Set permissions (if needed - adjust for your user/group)
 # RUN chown -R www-data:www-data /app/storage /app/bootstrap/cache
 
 # Expose port (if needed)
 # EXPOSE 80
 
-# Set default command
+# Set default command (if needed)
 # CMD ["php-fpm8.1", "-F"]
