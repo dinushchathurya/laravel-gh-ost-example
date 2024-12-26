@@ -10,17 +10,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     mysql-client # Add mysql-client
 
-# Install PHP and extensions
+# Install PHP and extensions (separate base and additional packages)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     php8.1 \  # Base PHP installation
-    php8.1-cli \  # Additional packages
-    php8.1-fpm \
-    php8.1-mysql \
-    php8.1-pgsql \
-    php8.1-zip \
-    php8.1-bcmath \
-    php8.1-mbstring \
-    php8.1-xml
+    php8.1-cli \  # Additional packages (CLI tools)
+    php8.1-fpm \  # Web server process manager (if applicable)
+    php8.1-mysql \  # MySQL database driver
+    php8.1-pgsql \  # PostgreSQL database driver (if needed)
+    php8.1-zip \   # ZIP archive support
+    php8.1-bcmath \  # Arbitrary precision math library
+    php8.1-mbstring \  # Multi-byte string functions
+    php8.1-xml \   # XML processing extension
 
 # Download and install gh-ost (specific version)
 WORKDIR /tmp
