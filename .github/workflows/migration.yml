@@ -1,0 +1,65 @@
+name: Deploy Database Changes
+
+on:
+  push:
+    branches:
+      - dev
+  pull_request:
+    branches:
+      - stg
+      - prod
+  workflow_dispatch:
+
+jobs:
+  deploy-database:
+    name: Deploy Database Changes to ${{ matrix.environment }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [dev, stg, prod]
+    if: |
+      (github.event_name == 'push' && matrix.environment == 'dev' && github.ref == 'refs/heads/dev') ||
+      (github.event_name == 'pull_request' && matrix.environment == 'stg' && github.base_ref == 'stg' && github.event.pull_request.merged == true) ||
+      (github.event_name == 'pull_request' && matrix.environment == 'prod' && github.base_ref == 'prod' && github.event.pull_request.merged == true)
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+
+      - name: Install gh-ost
+        run: |
+          wget https://github.com/github/gh-ost/releases/download/v1.1.4/gh-ost-linux-amd64 -O gh-ost # Replace with latest version
+          chmod +x gh-ost
+          sudo mv gh-ost /usr/local/bin/
+
+      - name: Install doctrine/dbal
+        run: composer require doctrine/dbal --no-interaction --no-dev
+
+      - name: Check for migration changes
+        id: check_migrations
+        run: |
+          if [[ -n "$(git diff --name-only HEAD^ HEAD -- database/migrations)" ]]; then
+            echo "::set-output name=migrations_changed::true"
+          else
+            echo "::set-output name=migrations_changed::false"
+          fi
+
+      - name: Run gh-ost migrations (only if migrations changed)
+        if: steps.check_migrations.outputs.migrations_changed == 'true'
+        env:
+          DB_HOST: ${{ secrets.DB_HOST_dev || '127.0.0.1' }} # Default for dev
+          DB_PORT: ${{ secrets.DB_PORT_dev || '3306' }} # Default for dev
+          DB_USER: ${{ secrets.DB_USER_dev || 'root' }} # Default for dev
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD_dev || '' }} # Default for dev (empty password)
+          DB_NAME: ${{ secrets.DB_NAME_dev || 'your_local_db_name' }} # Default for dev
+          DB_HOST_stg: ${{ secrets.DB_HOST_stg }}
+          DB_USER_stg: ${{ secrets.DB_USER_stg }}
+          DB_PASSWORD_stg: ${{ secrets.DB_PASSWORD_stg }}
+          DB_NAME_stg: ${{ secrets.DB_NAME_stg }}
+          DB_HOST_prod: ${{ secrets.DB_HOST_prod }}
+          DB_USER_prod: ${{ secrets.DB_USER_prod }}
+          DB_PASSWORD_prod: ${{ secrets.DB_PASSWORD_prod }}
+          DB_NAME_prod: ${{ secrets.DB_NAME_prod }}
+        run: |
+          chmod +x ./scripts/run-gh-ost.sh
+          ./scripts/run-gh-ost.sh ${{ matrix.environment }}
