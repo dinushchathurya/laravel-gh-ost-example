@@ -1,26 +1,16 @@
-name: Deploy Database Changes
+name: Deploy Database Changes to Specific Environment
 
 on:
-  push:
-    branches:
-      - dev
-  pull_request:
-    branches:
-      - stg
-      - prod
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
 
 jobs:
   deploy-database:
-    name: Deploy Database Changes to ${{ matrix.environment }}
+    name: Deploy Database Changes to ${{ inputs.environment }}
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        environment: [dev, stg, prod]
-    if: |
-      (github.event_name == 'push' && matrix.environment == 'dev' && github.ref == 'refs/heads/dev') ||
-      (github.event_name == 'pull_request' && matrix.environment == 'stg' && github.base_ref == 'stg' && github.event.pull_request.merged == true) ||
-      (github.event_name == 'pull_request' && matrix.environment == 'prod' && github.base_ref == 'prod' && github.event.pull_request.merged == true)
     steps:
       - uses: actions/checkout@v3
         with:
@@ -28,7 +18,7 @@ jobs:
 
       - name: Install gh-ost
         run: |
-          wget https://github.com/github/gh-ost/releases/download/v1.1.4/gh-ost-linux-amd64 -O gh-ost # Replace with latest version
+          wget https://github.com/github/gh-ost/releases/download/v1.1.4/gh-ost-linux-amd64 -O gh-ost # Update to latest version
           chmod +x gh-ost
           sudo mv gh-ost /usr/local/bin/
 
@@ -47,19 +37,11 @@ jobs:
       - name: Run gh-ost migrations (only if migrations changed)
         if: steps.check_migrations.outputs.migrations_changed == 'true'
         env:
-          DB_HOST: ${{ secrets.DB_HOST_dev || '127.0.0.1' }} # Default for dev
-          DB_PORT: ${{ secrets.DB_PORT_dev || '3306' }} # Default for dev
-          DB_USER: ${{ secrets.DB_USER_dev || 'root' }} # Default for dev
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD_dev || '' }} # Default for dev (empty password)
-          DB_NAME: ${{ secrets.DB_NAME_dev || 'your_local_db_name' }} # Default for dev
-          DB_HOST_stg: ${{ secrets.DB_HOST_stg }}
-          DB_USER_stg: ${{ secrets.DB_USER_stg }}
-          DB_PASSWORD_stg: ${{ secrets.DB_PASSWORD_stg }}
-          DB_NAME_stg: ${{ secrets.DB_NAME_stg }}
-          DB_HOST_prod: ${{ secrets.DB_HOST_prod }}
-          DB_USER_prod: ${{ secrets.DB_USER_prod }}
-          DB_PASSWORD_prod: ${{ secrets.DB_PASSWORD_prod }}
-          DB_NAME_prod: ${{ secrets.DB_NAME_prod }}
+          DB_HOST: ${{ secrets.DB_HOST_${{ inputs.environment }} || '127.0.0.1'}}
+          DB_PORT: ${{ secrets.DB_PORT_${{ inputs.environment }} || '3306'}}
+          DB_USER: ${{ secrets.DB_USER_${{ inputs.environment }} || 'root'}}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD_${{ inputs.environment }} || ''}}
+          DB_NAME: ${{ secrets.DB_NAME_${{ inputs.environment }} || 'your_local_db_name'}}
         run: |
           chmod +x ./scripts/run-gh-ost.sh
-          ./scripts/run-gh-ost.sh ${{ matrix.environment }}
+          ./scripts/run-gh-ost.sh ${{ inputs.environment }}
