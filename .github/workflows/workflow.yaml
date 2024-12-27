@@ -20,24 +20,6 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.1'
-          extensions: pdo, mysql
-
-      - name: Copy .env file
-        run: cp .env.${{ matrix.environment }} .env
-
-      - name: Install Composer dependencies
-        run: composer install --no-dev --optimize-autoloader
-
-      - name: Database Setup (for dev)
-        if: matrix.environment == 'dev' # Now correctly inside the job
-        run: |
-          php artisan key:generate
-          php artisan migrate:fresh --seed
-
       - name: Determine Migrations to Run
         id: migrations
         run: |
