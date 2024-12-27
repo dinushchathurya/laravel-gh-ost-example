@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          fetch-depth: 0 # Fetch all history - THIS IS THE KEY CHANGE
+          fetch-depth: 0
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
@@ -23,12 +23,18 @@ jobs:
         run: |
           echo "DB_HOST=localhost" >> .env
           echo "DB_DATABASE=laravel_gh_ost" >> .env
-          echo "DB_USERNAME=admin" >> .env
+          echo "DB_USERNAME=root" >> .env
           echo "DB_PASSWORD=" >> .env
+      - name: Debug git diff
+        run: |
+          echo "github.event.before: ${{ github.event.before }}"
+          echo "Current HEAD: $(git rev-parse HEAD)"
+          git diff ${{ github.event.before }} HEAD -- database/migrations/*.php
       - name: Run migrations with gh-ost and default migrations
         run: |
           php artisan config:clear
           MIGRATIONS=$(git diff --name-only ${{ github.event.before }} HEAD -- database/migrations/*.php)
+          echo "Migrations found: $MIGRATIONS" # Print the list of migrations
           if [[ -n "$MIGRATIONS" ]]; then
             for migration in $MIGRATIONS; do
                 GHOST_COMMAND=$(grep -oP 'gh-ost:.*' $migration)
