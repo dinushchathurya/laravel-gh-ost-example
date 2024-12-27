@@ -1,23 +1,13 @@
-name: Database Migrations
+name: Dev Database Migrations
 
 on:
   push:
     branches:
       - dev
-  pull_request:
-    branches:
-      - staging
-      - main
-  workflow_dispatch:
 
 jobs:
   migrate:
-    strategy:
-      matrix:
-        environment: [dev, staging, prod]
     runs-on: ubuntu-latest
-    needs: check_approval # Always depend on approval check, but it might be skipped
-    if: ${{ needs.check_approval.outputs.approved == 'true' }} # Only run if approved or no approval needed
 
     steps:
       - uses: actions/checkout@v3
@@ -30,22 +20,10 @@ jobs:
         run: composer install --no-interaction --no-dev --prefer-dist
       - name: Set up environment variables
         run: |
-          if [[ "${{ matrix.environment }}" == "dev" ]]; then
-            echo "DB_HOST=localhost" >> .env
-            echo "DB_DATABASE=your_dev_db" >> .env
-            echo "DB_USERNAME=your_dev_db_user" >> .env
-            echo "DB_PASSWORD=your_dev_db_pass" >> .env
-          elif [[ "${{ matrix.environment }}" == "staging" ]]; then
-            echo "DB_HOST=your_staging_db_host" >> .env
-            echo "DB_DATABASE=your_staging_db" >> .env
-            echo "DB_USERNAME=your_staging_db_user" >> .env
-            echo "DB_PASSWORD=your_staging_db_pass" >> .env
-          elif [[ "${{ matrix.environment }}" == "prod" ]]; then
-            echo "DB_HOST=your_prod_db_host" >> .env
-            echo "DB_DATABASE=your_prod_db" >> .env
-            echo "DB_USERNAME=your_prod_db_user" >> .env
-            echo "DB_PASSWORD=your_prod_db_pass" >> .env
-          fi
+          echo "DB_HOST=localhost" >> .env
+          echo "DB_DATABASE=your_dev_db" >> .env
+          echo "DB_USERNAME=your_dev_db_user" >> .env
+          echo "DB_PASSWORD=your_dev_db_pass" >> .env
       - name: Run migrations with gh-ost and default migrations
         run: |
           php artisan config:clear
@@ -54,8 +32,8 @@ jobs:
             for migration in $MIGRATIONS; do
                 GHOST_COMMAND=$(grep -oP 'gh-ost:.*' $migration)
                 if [[ -n "$GHOST_COMMAND" ]]; then
-                    echo "Running gh-ost migration: $GHOST_COMMAND"
-                    eval "$GHOST_COMMAND"
+                    echo "Running gh-ost migration: $GHOST_COMMAND --host=127.0.0.1"
+                    eval "$GHOST_COMMAND --host=127.0.0.1"
                 else
                     echo "Running default migration: $(basename $migration)"
                     php artisan migrate --path="$migration" --force
@@ -65,23 +43,4 @@ jobs:
               echo "No new migration found."
           fi
       - name: Generate new key if it's new deployment for dev env
-        if: ${{ matrix.environment == 'dev' }}
         run: php artisan key:generate
-
-  check_approval: # Job to check if approval is needed and given
-    runs-on: ubuntu-latest
-    outputs:
-      approved: ${{ (github.event_name != 'pull_request') || contains(github.event.review.state, 'approved') || (github.base_ref == 'dev') }}
-    steps:
-      - name: Determine approval status
-        run: |
-          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
-            echo "No pull request, approval not needed."
-          elif [[ "${{ github.base_ref }}" == "dev" ]]; then
-            echo "Push to dev, approval not needed."
-          elif [[ "${{ contains(github.event.review.state, 'approved') }}" == "true" ]]; then
-            echo "PR approved!"
-          else
-            echo "PR needs approval."
-            exit 1 # Fail the check if approval is needed and not given
-          fi
