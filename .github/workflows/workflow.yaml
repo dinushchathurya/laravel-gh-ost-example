@@ -1,4 +1,4 @@
-name: Deploy
+name: Database Migrations
 
 on:
   push:
@@ -7,58 +7,90 @@ on:
   pull_request:
     branches:
       - staging
-      - main
-  workflow_dispatch:
+  workflow_dispatch: # Allow manual triggering
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
+  migrate:
     strategy:
       matrix:
         environment: [dev, staging, prod]
+        include:
+          - environment: dev
+            branch: dev
+            db_host: localhost # Or your dev DB host
+            db_name: your_dev_db
+            db_user: your_dev_db_user
+            db_pass: your_dev_db_pass
+            needs_approval: false
+          - environment: staging
+            branch: staging
+            db_host: your_staging_db_host
+            db_name: your_staging_db
+            db_user: your_staging_db_user
+            db_pass: your_staging_db_pass
+            needs_approval: true
+          - environment: prod
+            branch: main # Or your prod branch
+            db_host: your_prod_db_host
+            db_name: your_prod_db
+            db_user: your_prod_db_user
+            db_pass: your_prod_db_pass
+            needs_approval: true
+
+    name: Migrate ${{ matrix.environment }}
+    runs-on: ubuntu-latest
+    needs: [approval] # Add approval step for staging and prod
+    if: ${{ !matrix.needs_approval || needs.approval.outputs.approved == 'true' }}
 
     steps:
       - uses: actions/checkout@v3
 
-      - name: Determine Migrations to Run
-        id: migrations
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1' # Or your PHP version
+          extensions: pdo, mysql
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --no-dev --prefer-dist
+
+      - name: Set up environment variables
         run: |
-          MIGRATIONS=$(php artisan migrate:status --pending | grep -E "(Pending|No migrations found)" -v | awk '{print $1}')
-          echo "::set-output name=list::$MIGRATIONS"
+          echo "DB_HOST=${{ matrix.db_host }}" >> .env
+          echo "DB_DATABASE=${{ matrix.db_name }}" >> .env
+          echo "DB_USERNAME=${{ matrix.db_user }}" >> .env
+          echo "DB_PASSWORD=${{ matrix.db_pass }}" >> .env
 
-      - name: Run Migrations
-        if: steps.migrations.outputs.list != '' # Still valid
+      - name: Run migrations with gh-ost and default migrations
         run: |
-          for migration in ${{ fromJson(steps.migrations.outputs.list) }}; do
-            TARGET=$(grep -oP '(?<=TARGET: ).*' database/migrations/$migration)
-            GH_OST_ALTER=$(grep -oP '(?<=gh-ost: ).*' database/migrations/$migration)
+          php artisan config:clear
+          MIGRATIONS=$(git diff --name-only ${{ github.event.before }} HEAD -- database/migrations/*.php)
+          if [[ -n "$MIGRATIONS" ]]; then
+            for migration in $MIGRATIONS; do
+                GHOST_COMMAND=$(grep -oP 'gh-ost:.*' $migration)
+                if [[ -n "$GHOST_COMMAND" ]]; then
+                    echo "Running gh-ost migration: $GHOST_COMMAND"
+                    eval "$GHOST_COMMAND" # Execute gh-ost command
+                else
+                    echo "Running default migration: $(basename $migration)"
+                    php artisan migrate --path="$migration" --force
+                fi
+            done
+          else
+              echo "No new migration found."
+          fi
+          
+      - name: Generate new key if it's new deployment for dev env
+        if: ${{ matrix.environment == 'dev' }}
+        run: php artisan key:generate
 
-            # ***ENVIRONMENT CHECK NOW HERE***
-            if [[ -z "$TARGET" || "$TARGET" == *"${{ matrix.environment }}"* ]]; then
-              if [[ ! -z "$GH_OST_ALTER" ]]; then
-                echo "Running gh-ost migration: $migration (Environment: ${{ matrix.environment }})"
-                echo "gh-ost alter: $GH_OST_ALTER"
-
-                GH_OST_ALTER=$(echo "$GH_OST_ALTER" | sed 's/"/\\"/g')
-
-                gh-ost \
-                  --host="${{ secrets.DB_HOST }}" \
-                  --port="${{ secrets.DB_PORT }}" \
-                  --user="${{ secrets.DB_USERNAME }}" \
-                  --password="${{ secrets.DB_PASSWORD }}" \
-                  --database="${{ secrets.DB_DATABASE }}" \
-                  --table=users \
-                  --alter="$GH_OST_ALTER" \
-                  --execute
-              else
-                echo "Running standard migration: $migration (Environment: ${{ matrix.environment }})"
-                php artisan migrate --path=database/migrations/$migration --force
-              fi
-            fi
-          done
-
-      - name: Deploy to Server (staging/prod)
-        if: matrix.environment != 'dev' # Now correctly inside the job
-        run: |
-          echo "Deploying to ${{ matrix.environment }} server..."
-          # Your deployment commands here
+  approval: # Manual approval job
+    if: ${{ github.event_name == 'pull_request' }}
+    needs: []
+    runs-on: ubuntu-latest
+    outputs:
+      approved: ${{ contains(github.event.review.state, 'approved') }}
+    steps:
+      - name: Check for approvals
+        if: ${{ github.event.review.state == 'approved' }}
+        run: echo "PR approved!"
