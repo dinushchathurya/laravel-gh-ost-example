@@ -14,7 +14,7 @@ class AddDobToUsersTable extends Migration
     public function up()
     {
         Schema::table('users', function (Blueprint $table) {
-            // gh-ost: ALTER TABLE users ADD COLUMN dob DATE NULL AFTER email.
+            // gh-ost: ALTER TABLE users ADD COLUMN dob DATE NULL AFTER email
             $table->date('dob')->nullable()->after('email');
         });
     }

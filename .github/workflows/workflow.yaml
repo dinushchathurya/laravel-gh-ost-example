@@ -6,12 +6,29 @@ on:
       - dev
 
 jobs:
-  migrate:
+  migrate-dev:
+    name: Migrate Dev Database
     runs-on: ubuntu-latest
+    container:
+      image: mysql:latest # Use a MySQL image as a base for gh-ost
+    services:
+      mysql:
+        image: mysql:5.7 # or your mysql version
+        env:
+          MYSQL_ROOT_PASSWORD: 
+          MYSQL_DATABASE: laravel_gh_ost
+          MYSQL_USER: root
+          MYSQL_PASSWORD: 
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+      - name: Checkout code
+        uses: actions/checkout@v3
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -22,43 +39,40 @@ jobs:
       - name: Install Composer dependencies
         run: composer install --no-interaction --no-dev --prefer-dist
 
-      - name: Set up environment variables
-        run: |
-          echo "DB_HOST=localhost" >> .env
-          echo "DB_DATABASE=your_dev_db" >> .env # Replace with your DB name
-          echo "DB_USERNAME=your_dev_db_user" >> .env # Replace with your DB user
-          echo "DB_PASSWORD=your_dev_db_pass" >> .env # Replace with your DB password
+      - name: Copy .env.example to .env
+        run: cp .env.example .env
 
-      - name: Install gh-ost (pre-built binary)
+      - name: Set up environment variables for dev
         run: |
-          GHOST_URL="https://github.com/github/gh-ost/releases/download/v1.1.7/gh-ost-binary-linux-amd64-20241219160321.tar.gz"
+          echo "DB_CONNECTION=mysql" >> .env
+          echo "DB_HOST=localhsot" >> .env # Use service name
+          echo "DB_PORT=3306" >> .env
+          echo "DB_DATABASE=laravel_gh_ost" >> .env
+          echo "DB_USERNAME=root" >> .env
+          echo "DB_PASSWORD=" >> .env
 
-          curl -L "$GHOST_URL" -o gh-ost || exit 1 # Exit if download fails
+      - name: Install gh-ost
+        run: |
+          wget https://github.com/github/gh-ost/releases/download/v1.1.7/gh-ost-binary-linux-amd64-20241219160321.tar.gz -O gh-ost
           chmod +x gh-ost
-          sudo mv gh-ost /usr/local/bin || exit 1 # Exit if move fails
+          sudo mv gh-ost /usr/local/bin/
 
-      - name: Verify gh-ost installation
-        run: gh-ost --version || exit 1 # Exit if verification fails
-
-      - name: Run migrations with gh-ost and default migrations
+      - name: Check for gh-ost migrations and run
+        id: check-gh-ost
         run: |
-          php artisan config:clear
-          MIGRATIONS=$(git diff --name-only ${{ github.event.before }} HEAD -- database/migrations/*.php)
-          echo "Migrations found: $MIGRATIONS"
-          if [[ -n "$MIGRATIONS" ]]; then
-            for migration in $MIGRATIONS; do
-              GHOST_COMMAND=$(grep -oP 'gh-ost:.*' $migration)
-              if [[ -n "$GHOST_COMMAND" ]]; then
-                echo "Running gh-ost migration: $GHOST_COMMAND --host=127.0.0.1"
-                eval "$GHOST_COMMAND --host=127.0.0.1" || exit 1 # Exit if gh-ost fails
-              else
-                echo "Running default migration: $(basename $migration)"
-                php artisan migrate --path="$migration" --force || exit 1 # Exit if migration fails
-              fi
-            done
-          else
-            echo "No new migration found."
+          HAS_GHOST=false
+          for file in $(find database/migrations -name "*.php"); do
+            if grep -q "gh-ost:" "$file"; then
+              HAS_GHOST=true
+              echo "::set-output name=has_ghost::true"
+              GHOST_COMMAND=$(grep "gh-ost:" "$file" | cut -d':' -f2 | xargs)
+              echo "Running gh-ost command: $GHOST_COMMAND"
+              gh-ost $GHOST_COMMAND --host mysql --user your_dev_user --password your_dev_password --database your_dev_database
+            fi
+          done
+          if [[ "$HAS_GHOST" == "false" ]]; then
+            echo "No gh-ost migrations found."
           fi
-
-      - name: Generate new key if it's new deployment for dev env
-        run: php artisan key:generate
+      - name: Run regular migrations if no ghost migration or ghost migration complete
+        if: steps.check-gh-ost.outputs.has_ghost != 'true'
+        run: php artisan migrate --force
