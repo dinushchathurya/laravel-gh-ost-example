@@ -9,23 +9,6 @@ jobs:
   migrate-dev:
     name: Migrate Dev Database
     runs-on: ubuntu-latest
-    container:
-      image: mysql:latest # Use a MySQL image as a base for gh-ost
-    services:
-      mysql:
-        image: mysql:5.7 # or your mysql version
-        env:
-          MYSQL_ROOT_PASSWORD: 
-          MYSQL_DATABASE: laravel_gh_ost
-          MYSQL_USER: root
-          MYSQL_PASSWORD: 
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd "mysqladmin ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
