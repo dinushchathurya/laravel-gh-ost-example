@@ -1,89 +1,31 @@
-name: gh-ost from Laravel Migration
+name: Run Migrations with gh-ost
 
 on:
   workflow_dispatch:
-    inputs:
-      db_host:
-        description: "Database host"
-        required: true
-        default: "127.0.0.1"
-      db_user:
-        description: "Database username"
-        required: true
-      db_password:
-        description: "Database password"
-        required: true
-      db_name:
-        description: "Database name"
-        required: true
-      migration_file:
-        description: "Laravel migration file path"
-        required: true
+  push:
+    branches:
+      - dev
 
 jobs:
-  gh-ost-migration:
+  migrations:
     runs-on: ubuntu-latest
 
     steps:
-    # Checkout the code
     - name: Checkout Code
       uses: actions/checkout@v3
 
-    # Set up PHP
-    - name: Set up PHP
-      uses: shivammathur/setup-php@v3
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
       with:
         php-version: 8.1
 
-    # Install MySQL client
-    - name: Install MySQL Client
-      run: sudo apt-get install -y mysql-client
+    - name: Install Dependencies
+      run: composer install --no-dev --optimize-autoloader
 
-    # Install gh-ost
     - name: Install gh-ost
       run: |
-        wget https://github.com/github/gh-ost/releases/download/v1.1.7/gh-ost-binary-linux-amd64-20241219160321.tar.gz
-        chmod +x gh-ost-linux-amd64
-        sudo mv gh-ost-linux-amd64 /usr/local/bin/gh-ost
+        curl -L https://github.com/github/gh-ost/releases/download/v1.1.7/gh-ost-binary-linux-amd64-20241219160321.tar.gz -o /usr/local/bin/gh-ost
+        chmod +x /usr/local/bin/gh-ost
 
-    # Extract table name and SQL ALTER statement from migration
-    - name: Extract Table and Alter Statement
-      id: parse_migration
-      env:
-        MIGRATION_FILE: ${{ github.event.inputs.migration_file }}
-      run: |
-        php -r "
-        require 'vendor/autoload.php';
-        \$file = getenv('MIGRATION_FILE');
-        \$content = file_get_contents(\$file);
-        preg_match('/Schema::table\\(\'([^\']+)\'/', \$content, \$matches);
-        \$table = \$matches[1] ?? null;
-        preg_match('/\\$table->([^;]+);/', \$content, \$alter);
-        \$alter_statement = 'ALTER TABLE ' . \$table . ' ' . trim(\$alter[0]);
-        file_put_contents('/tmp/migration_details.json', json_encode(['table' => \$table, 'alter_statement' => \$alter_statement]));
-        ";
-      run: cat /tmp/migration_details.json
-
-    # Run gh-ost migration
-    - name: Run gh-ost Migration
-      env:
-        DB_HOST: ${{ github.event.inputs.db_host }}
-        DB_USER: ${{ github.event.inputs.db_user }}
-        DB_PASSWORD: ${{ github.event.inputs.db_password }}
-        DB_NAME: ${{ github.event.inputs.db_name }}
-        MIGRATION_DETAILS: $(cat /tmp/migration_details.json)
-      run: |
-        TABLE_NAME=$(echo $MIGRATION_DETAILS | jq -r .table)
-        ALTER_STATEMENT=$(echo $MIGRATION_DETAILS | jq -r .alter_statement)
-        gh-ost \
-          --user="${DB_USER}" \
-          --password="${DB_PASSWORD}" \
-          --host="${DB_HOST}" \
-          --database="${DB_NAME}" \
-          --table="${TABLE_NAME}" \
-          --alter="${ALTER_STATEMENT}" \
-          --allow-on-master \
-          --chunk-size=1000 \
-          --max-lag-millis=1000 \
-          --postpone-cut-over-flag-file=/tmp/gh-ost.cutover \
-          --execute
+    - name: Run gh-ost Migrations
+      run: ./run-gh-ost.sh
