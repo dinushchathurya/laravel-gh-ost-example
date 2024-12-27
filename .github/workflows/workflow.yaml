@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - staging
+      - main # Or your prod branch
   workflow_dispatch: # Allow manual triggering
 
 jobs:
@@ -17,7 +18,7 @@ jobs:
         include:
           - environment: dev
             branch: dev
-            db_host: localhost # Or your dev DB host
+            db_host: localhost
             db_name: your_dev_db
             db_user: your_dev_db_user
             db_pass: your_dev_db_pass
@@ -30,7 +31,7 @@ jobs:
             db_pass: your_staging_db_pass
             needs_approval: true
           - environment: prod
-            branch: main # Or your prod branch
+            branch: main
             db_host: your_prod_db_host
             db_name: your_prod_db
             db_user: your_prod_db_user
@@ -39,28 +40,25 @@ jobs:
 
     name: Migrate ${{ matrix.environment }}
     runs-on: ubuntu-latest
-    needs: [approval] # Add approval step for staging and prod
-    if: ${{ !matrix.needs_approval || needs.approval.outputs.approved == 'true' }}
+    if: ${{ !matrix.needs_approval || (matrix.needs_approval && needs.approval.outputs.approved == 'true') }} # Corrected if condition
+    needs:
+      - approval # Ensure the approval job runs if needed
 
     steps:
       - uses: actions/checkout@v3
-
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.1' # Or your PHP version
+          php-version: '8.1'
           extensions: pdo, mysql
-
       - name: Install Composer dependencies
         run: composer install --no-interaction --no-dev --prefer-dist
-
       - name: Set up environment variables
         run: |
           echo "DB_HOST=${{ matrix.db_host }}" >> .env
           echo "DB_DATABASE=${{ matrix.db_name }}" >> .env
           echo "DB_USERNAME=${{ matrix.db_user }}" >> .env
           echo "DB_PASSWORD=${{ matrix.db_pass }}" >> .env
-
       - name: Run migrations with gh-ost and default migrations
         run: |
           php artisan config:clear
@@ -70,7 +68,7 @@ jobs:
                 GHOST_COMMAND=$(grep -oP 'gh-ost:.*' $migration)
                 if [[ -n "$GHOST_COMMAND" ]]; then
                     echo "Running gh-ost migration: $GHOST_COMMAND"
-                    eval "$GHOST_COMMAND" # Execute gh-ost command
+                    eval "$GHOST_COMMAND"
                 else
                     echo "Running default migration: $(basename $migration)"
                     php artisan migrate --path="$migration" --force
@@ -79,14 +77,12 @@ jobs:
           else
               echo "No new migration found."
           fi
-          
       - name: Generate new key if it's new deployment for dev env
         if: ${{ matrix.environment == 'dev' }}
         run: php artisan key:generate
 
   approval: # Manual approval job
-    if: ${{ github.event_name == 'pull_request' }}
-    needs: []
+    if: ${{ github.event_name == 'pull_request' && (github.base_ref == 'staging' || github.base_ref == 'main') }} # Only run for PRs to staging or main
     runs-on: ubuntu-latest
     outputs:
       approved: ${{ contains(github.event.review.state, 'approved') }}
