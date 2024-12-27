@@ -1,7 +1,7 @@
 #!/bin/bash
 
 MIGRATIONS_DIR="./database/migrations"
-DB_HOST="localhost"
+DB_HOST="127.0.0.1"
 DB_USER="root"
 DB_PASSWORD=""
 DB_NAME="laravel_gh_ost"
