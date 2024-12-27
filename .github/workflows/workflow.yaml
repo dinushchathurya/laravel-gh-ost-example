@@ -12,42 +12,57 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
+
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.1'
           extensions: pdo, mysql
+
       - name: Install Composer dependencies
         run: composer install --no-interaction --no-dev --prefer-dist
+
       - name: Set up environment variables
         run: |
           echo "DB_HOST=localhost" >> .env
-          echo "DB_DATABASE=laravel_gh_ost" >> .env
-          echo "DB_USERNAME=root" >> .env
-          echo "DB_PASSWORD=" >> .env
-      - name: Debug git diff
+          echo "DB_DATABASE=your_dev_db" >> .env # Replace with your DB name
+          echo "DB_USERNAME=your_dev_db_user" >> .env # Replace with your DB user
+          echo "DB_PASSWORD=your_dev_db_pass" >> .env # Replace with your DB password
+
+      - name: Install gh-ost (pre-built binary)
         run: |
-          echo "github.event.before: ${{ github.event.before }}"
-          echo "Current HEAD: $(git rev-parse HEAD)"
-          git diff ${{ github.event.before }} HEAD -- database/migrations/*.php
+          # Get the latest release tag. Adjust the repo if needed
+          LATEST_RELEASE=$(curl -s https://api.github.com/repos/github/gh-ost/releases/latest | jq -r '.tag_name')
+          
+          # Construct the download URL for Linux. Check the gh-ost releases page for the correct URL pattern.
+          GHOST_URL="https://github.com/github/gh-ost/releases/download/${LATEST_RELEASE}/gh-ost-linux-amd64"
+
+          curl -L "$GHOST_URL" -o gh-ost || exit 1 # Exit if download fails
+          chmod +x gh-ost
+          sudo mv gh-ost /usr/local/bin || exit 1 # Exit if move fails
+
+      - name: Verify gh-ost installation
+        run: gh-ost --version || exit 1 # Exit if verification fails
+
       - name: Run migrations with gh-ost and default migrations
         run: |
           php artisan config:clear
           MIGRATIONS=$(git diff --name-only ${{ github.event.before }} HEAD -- database/migrations/*.php)
-          echo "Migrations found: $MIGRATIONS" # Print the list of migrations
+          echo "Migrations found: $MIGRATIONS"
           if [[ -n "$MIGRATIONS" ]]; then
             for migration in $MIGRATIONS; do
-                GHOST_COMMAND=$(grep -oP 'gh-ost:.*' $migration)
-                if [[ -n "$GHOST_COMMAND" ]]; then
-                    echo "Running gh-ost migration: $GHOST_COMMAND --host=127.0.0.1"
-                    eval "$GHOST_COMMAND --host=127.0.0.1"
-                else
-                    echo "Running default migration: $(basename $migration)"
-                    php artisan migrate --path="$migration" --force
-                fi
+              GHOST_COMMAND=$(grep -oP 'gh-ost:.*' $migration)
+              if [[ -n "$GHOST_COMMAND" ]]; then
+                echo "Running gh-ost migration: $GHOST_COMMAND --host=127.0.0.1"
+                eval "$GHOST_COMMAND --host=127.0.0.1" || exit 1 # Exit if gh-ost fails
+              else
+                echo "Running default migration: $(basename $migration)"
+                php artisan migrate --path="$migration" --force || exit 1 # Exit if migration fails
+              fi
             done
           else
-              echo "No new migration found."
+            echo "No new migration found."
           fi
+
       - name: Generate new key if it's new deployment for dev env
         run: php artisan key:generate
