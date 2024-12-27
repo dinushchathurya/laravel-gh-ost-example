@@ -24,9 +24,10 @@ jobs:
 
     - name: Install gh-ost
       run: |
-        curl -L https://github.com/github/gh-ost/releases/download/v1.1.7/gh-ost-binary-linux-amd64-20241219160321.tar.gz -o /usr/local/bin/gh-ost
-        chmod +x /usr/local/bin/gh-ost
-    
+        curl -L https://github.com/github/gh-ost/releases/download/v1.1.7/gh-ost-binary-linux-amd64-20241219160321.tar.gz  -o gh-ost
+        chmod +x gh-ost
+        sudo mv gh-ost /usr/local/bin/
+        
     - name: Set Permissions for gh-ost Script
       run: chmod +x ./run-gh-ost.sh
 
