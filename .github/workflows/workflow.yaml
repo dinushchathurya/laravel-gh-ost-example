@@ -8,9 +8,10 @@ on:
 jobs:
   migrate:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # Fetch all history - THIS IS THE KEY CHANGE
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
@@ -21,9 +22,9 @@ jobs:
       - name: Set up environment variables
         run: |
           echo "DB_HOST=localhost" >> .env
-          echo "DB_DATABASE=your_dev_db" >> .env
-          echo "DB_USERNAME=your_dev_db_user" >> .env
-          echo "DB_PASSWORD=your_dev_db_pass" >> .env
+          echo "DB_DATABASE=laravel_gh_ost" >> .env
+          echo "DB_USERNAME=admin" >> .env
+          echo "DB_PASSWORD=" >> .env
       - name: Run migrations with gh-ost and default migrations
         run: |
           php artisan config:clear
