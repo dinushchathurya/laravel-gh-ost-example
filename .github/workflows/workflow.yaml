@@ -7,42 +7,17 @@ on:
   pull_request:
     branches:
       - staging
-      - main # Or your prod branch
-  workflow_dispatch: # Allow manual triggering
+      - main
+  workflow_dispatch:
 
 jobs:
   migrate:
     strategy:
       matrix:
         environment: [dev, staging, prod]
-        include:
-          - environment: dev
-            branch: dev
-            db_host: localhost
-            db_name: your_dev_db
-            db_user: your_dev_db_user
-            db_pass: your_dev_db_pass
-            needs_approval: false
-          - environment: staging
-            branch: staging
-            db_host: your_staging_db_host
-            db_name: your_staging_db
-            db_user: your_staging_db_user
-            db_pass: your_staging_db_pass
-            needs_approval: true
-          - environment: prod
-            branch: main
-            db_host: your_prod_db_host
-            db_name: your_prod_db
-            db_user: your_prod_db_user
-            db_pass: your_prod_db_pass
-            needs_approval: true
-
-    name: Migrate ${{ matrix.environment }}
     runs-on: ubuntu-latest
-    if: ${{ !matrix.needs_approval || (matrix.needs_approval && needs.approval.outputs.approved == 'true') }} # Corrected if condition
-    needs:
-      - approval # Ensure the approval job runs if needed
+    needs: check_approval # Always depend on approval check, but it might be skipped
+    if: ${{ needs.check_approval.outputs.approved == 'true' }} # Only run if approved or no approval needed
 
     steps:
       - uses: actions/checkout@v3
@@ -55,10 +30,22 @@ jobs:
         run: composer install --no-interaction --no-dev --prefer-dist
       - name: Set up environment variables
         run: |
-          echo "DB_HOST=${{ matrix.db_host }}" >> .env
-          echo "DB_DATABASE=${{ matrix.db_name }}" >> .env
-          echo "DB_USERNAME=${{ matrix.db_user }}" >> .env
-          echo "DB_PASSWORD=${{ matrix.db_pass }}" >> .env
+          if [[ "${{ matrix.environment }}" == "dev" ]]; then
+            echo "DB_HOST=localhost" >> .env
+            echo "DB_DATABASE=your_dev_db" >> .env
+            echo "DB_USERNAME=your_dev_db_user" >> .env
+            echo "DB_PASSWORD=your_dev_db_pass" >> .env
+          elif [[ "${{ matrix.environment }}" == "staging" ]]; then
+            echo "DB_HOST=your_staging_db_host" >> .env
+            echo "DB_DATABASE=your_staging_db" >> .env
+            echo "DB_USERNAME=your_staging_db_user" >> .env
+            echo "DB_PASSWORD=your_staging_db_pass" >> .env
+          elif [[ "${{ matrix.environment }}" == "prod" ]]; then
+            echo "DB_HOST=your_prod_db_host" >> .env
+            echo "DB_DATABASE=your_prod_db" >> .env
+            echo "DB_USERNAME=your_prod_db_user" >> .env
+            echo "DB_PASSWORD=your_prod_db_pass" >> .env
+          fi
       - name: Run migrations with gh-ost and default migrations
         run: |
           php artisan config:clear
@@ -81,12 +68,20 @@ jobs:
         if: ${{ matrix.environment == 'dev' }}
         run: php artisan key:generate
 
-  approval: # Manual approval job
-    if: ${{ github.event_name == 'pull_request' && (github.base_ref == 'staging' || github.base_ref == 'main') }} # Only run for PRs to staging or main
+  check_approval: # Job to check if approval is needed and given
     runs-on: ubuntu-latest
     outputs:
-      approved: ${{ contains(github.event.review.state, 'approved') }}
+      approved: ${{ (github.event_name != 'pull_request') || contains(github.event.review.state, 'approved') || (github.base_ref == 'dev') }}
     steps:
-      - name: Check for approvals
-        if: ${{ github.event.review.state == 'approved' }}
-        run: echo "PR approved!"
+      - name: Determine approval status
+        run: |
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            echo "No pull request, approval not needed."
+          elif [[ "${{ github.base_ref }}" == "dev" ]]; then
+            echo "Push to dev, approval not needed."
+          elif [[ "${{ contains(github.event.review.state, 'approved') }}" == "true" ]]; then
+            echo "PR approved!"
+          else
+            echo "PR needs approval."
+            exit 1 # Fail the check if approval is needed and not given
+          fi
