@@ -14,32 +14,14 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v3
 
-    - name: Debug Architecture
-      run: uname -a
-
-    - name: Install Dependencies
-      run: composer install --no-dev --optimize-autoloader
-
-    - name: Install Build Tools
-      run: sudo apt-get update && sudo apt-get install -y git make gcc
-
-    - name: Clone gh-ost Repository
-      run: git clone https://github.com/github/gh-ost.git
-
-    - name: Build gh-ost from Source
+    - name: Install gh-ost
       run: |
-        cd gh-ost
-        make build
-        sudo mv bin/gh-ost /usr/local/bin/
-
-    - name: Verify gh-ost Binary
-      run: file /usr/local/bin/gh-ost
-
+        curl -L https://github.com/github/gh-ost/releases/download/v1.1.7/gh-ost-binary-linux-amd64-20241219160321.tar.gz  -o gh-ost
+        chmod +x gh-ost
+        sudo mv gh-ost /usr/local/bin/
+        
     - name: Set Permissions for gh-ost Script
       run: chmod +x ./run-gh-ost.sh
 
     - name: Run gh-ost Migrations
       run: ./run-gh-ost.sh
-
-    - name: Run Standard Laravel Migrations
-      run: php artisan migrate --force
