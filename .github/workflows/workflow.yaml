@@ -1,61 +1,89 @@
-name: Dev Database Migrations
+name: gh-ost from Laravel Migration
 
 on:
-  push:
-    branches:
-      - dev
+  workflow_dispatch:
+    inputs:
+      db_host:
+        description: "Database host"
+        required: true
+        default: "127.0.0.1"
+      db_user:
+        description: "Database username"
+        required: true
+      db_password:
+        description: "Database password"
+        required: true
+      db_name:
+        description: "Database name"
+        required: true
+      migration_file:
+        description: "Laravel migration file path"
+        required: true
 
 jobs:
-  migrate-dev:
-    name: Migrate Dev Database
+  gh-ost-migration:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    # Checkout the code
+    - name: Checkout Code
+      uses: actions/checkout@v3
 
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.1'
-          extensions: pdo, mysql
+    # Set up PHP
+    - name: Set up PHP
+      uses: shivammathur/setup-php@v3
+      with:
+        php-version: 8.1
 
-      - name: Install Composer dependencies
-        run: composer install --no-interaction --no-dev --prefer-dist
+    # Install MySQL client
+    - name: Install MySQL Client
+      run: sudo apt-get install -y mysql-client
 
-      - name: Copy .env.example to .env
-        run: cp .env.example .env
+    # Install gh-ost
+    - name: Install gh-ost
+      run: |
+        wget https://github.com/github/gh-ost/releases/download/v1.1.7/gh-ost-binary-linux-amd64-20241219160321.tar.gz
+        chmod +x gh-ost-linux-amd64
+        sudo mv gh-ost-linux-amd64 /usr/local/bin/gh-ost
 
-      - name: Set up environment variables for dev
-        run: |
-          echo "DB_CONNECTION=mysql" >> .env
-          echo "DB_HOST=localhsot" >> .env # Use service name
-          echo "DB_PORT=3306" >> .env
-          echo "DB_DATABASE=laravel_gh_ost" >> .env
-          echo "DB_USERNAME=root" >> .env
-          echo "DB_PASSWORD=" >> .env
+    # Extract table name and SQL ALTER statement from migration
+    - name: Extract Table and Alter Statement
+      id: parse_migration
+      env:
+        MIGRATION_FILE: ${{ github.event.inputs.migration_file }}
+      run: |
+        php -r "
+        require 'vendor/autoload.php';
+        \$file = getenv('MIGRATION_FILE');
+        \$content = file_get_contents(\$file);
+        preg_match('/Schema::table\\(\'([^\']+)\'/', \$content, \$matches);
+        \$table = \$matches[1] ?? null;
+        preg_match('/\\$table->([^;]+);/', \$content, \$alter);
+        \$alter_statement = 'ALTER TABLE ' . \$table . ' ' . trim(\$alter[0]);
+        file_put_contents('/tmp/migration_details.json', json_encode(['table' => \$table, 'alter_statement' => \$alter_statement]));
+        ";
+      run: cat /tmp/migration_details.json
 
-      - name: Install gh-ost
-        run: |
-          wget https://github.com/github/gh-ost/releases/download/v1.1.7/gh-ost-binary-linux-amd64-20241219160321.tar.gz -O gh-ost
-          chmod +x gh-ost
-          sudo mv gh-ost /usr/local/bin/
-
-      - name: Check for gh-ost migrations and run
-        id: check-gh-ost
-        run: |
-          HAS_GHOST=false
-          for file in $(find database/migrations -name "*.php"); do
-            if grep -q "gh-ost:" "$file"; then
-              HAS_GHOST=true
-              echo "::set-output name=has_ghost::true"
-              GHOST_COMMAND=$(grep "gh-ost:" "$file" | cut -d':' -f2 | xargs)
-              echo "Running gh-ost command: $GHOST_COMMAND"
-              gh-ost $GHOST_COMMAND --host mysql --user your_dev_user --password your_dev_password --database your_dev_database
-            fi
-          done
-          if [[ "$HAS_GHOST" == "false" ]]; then
-            echo "No gh-ost migrations found."
-          fi
-      - name: Run regular migrations if no ghost migration or ghost migration complete
-        if: steps.check-gh-ost.outputs.has_ghost != 'true'
-        run: php artisan migrate --force
+    # Run gh-ost migration
+    - name: Run gh-ost Migration
+      env:
+        DB_HOST: ${{ github.event.inputs.db_host }}
+        DB_USER: ${{ github.event.inputs.db_user }}
+        DB_PASSWORD: ${{ github.event.inputs.db_password }}
+        DB_NAME: ${{ github.event.inputs.db_name }}
+        MIGRATION_DETAILS: $(cat /tmp/migration_details.json)
+      run: |
+        TABLE_NAME=$(echo $MIGRATION_DETAILS | jq -r .table)
+        ALTER_STATEMENT=$(echo $MIGRATION_DETAILS | jq -r .alter_statement)
+        gh-ost \
+          --user="${DB_USER}" \
+          --password="${DB_PASSWORD}" \
+          --host="${DB_HOST}" \
+          --database="${DB_NAME}" \
+          --table="${TABLE_NAME}" \
+          --alter="${ALTER_STATEMENT}" \
+          --allow-on-master \
+          --chunk-size=1000 \
+          --max-lag-millis=1000 \
+          --postpone-cut-over-flag-file=/tmp/gh-ost.cutover \
+          --execute
