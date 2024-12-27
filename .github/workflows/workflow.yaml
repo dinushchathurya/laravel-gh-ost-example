@@ -31,11 +31,7 @@ jobs:
 
       - name: Install gh-ost (pre-built binary)
         run: |
-          # Get the latest release tag. Adjust the repo if needed
-          LATEST_RELEASE=$(curl -s https://api.github.com/repos/github/gh-ost/releases/latest | jq -r '.tag_name')
-          
-          # Construct the download URL for Linux. Check the gh-ost releases page for the correct URL pattern.
-          GHOST_URL="https://github.com/github/gh-ost/releases/download/${LATEST_RELEASE}/gh-ost-linux-amd64"
+          GHOST_URL="https://github.com/github/gh-ost/releases/download/v1.1.7/gh-ost-binary-linux-amd64-20241219160321.tar.gz"
 
           curl -L "$GHOST_URL" -o gh-ost || exit 1 # Exit if download fails
           chmod +x gh-ost
