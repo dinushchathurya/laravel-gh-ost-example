@@ -16,7 +16,6 @@ jobs:
     strategy:
       matrix:
         environment: [dev, staging, prod]
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.environment != 'dev') || github.event_name == 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@v3
@@ -34,7 +33,7 @@ jobs:
         run: composer install --no-dev --optimize-autoloader
 
       - name: Database Setup (for dev)
-        if: matrix.environment == 'dev'
+        if: matrix.environment == 'dev' # Now correctly inside the job
         run: |
           php artisan key:generate
           php artisan migrate:fresh --seed
@@ -46,19 +45,19 @@ jobs:
           echo "::set-output name=list::$MIGRATIONS"
 
       - name: Run Migrations
-        if: steps.migrations.outputs.list != ''
+        if: steps.migrations.outputs.list != '' # Still valid
         run: |
           for migration in ${{ fromJson(steps.migrations.outputs.list) }}; do
             TARGET=$(grep -oP '(?<=TARGET: ).*' database/migrations/$migration)
             GH_OST_ALTER=$(grep -oP '(?<=gh-ost: ).*' database/migrations/$migration)
 
+            # ***ENVIRONMENT CHECK NOW HERE***
             if [[ -z "$TARGET" || "$TARGET" == *"${{ matrix.environment }}"* ]]; then
               if [[ ! -z "$GH_OST_ALTER" ]]; then
-                echo "Running gh-ost migration: $migration"
+                echo "Running gh-ost migration: $migration (Environment: ${{ matrix.environment }})"
                 echo "gh-ost alter: $GH_OST_ALTER"
 
-                # ***ESCAPE SPECIAL CHARACTERS IN ALTER STATEMENT***
-                GH_OST_ALTER=$(echo "$GH_OST_ALTER" | sed 's/"/\\"/g') # Escape double quotes
+                GH_OST_ALTER=$(echo "$GH_OST_ALTER" | sed 's/"/\\"/g')
 
                 gh-ost \
                   --host="${{ secrets.DB_HOST }}" \
@@ -70,14 +69,14 @@ jobs:
                   --alter="$GH_OST_ALTER" \
                   --execute
               else
-                echo "Running standard migration: $migration"
+                echo "Running standard migration: $migration (Environment: ${{ matrix.environment }})"
                 php artisan migrate --path=database/migrations/$migration --force
               fi
             fi
           done
 
       - name: Deploy to Server (staging/prod)
-        if: matrix.environment != 'dev'
+        if: matrix.environment != 'dev' # Now correctly inside the job
         run: |
           echo "Deploying to ${{ matrix.environment }} server..."
           # Your deployment commands here
