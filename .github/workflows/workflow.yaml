@@ -1,0 +1,83 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - dev
+  pull_request:
+    branches:
+      - staging
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [dev, staging, prod]
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.environment != 'dev') || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: pdo, mysql
+
+      - name: Copy .env file
+        run: cp .env.${{ matrix.environment }} .env
+
+      - name: Install Composer dependencies
+        run: composer install --no-dev --optimize-autoloader
+
+      - name: Database Setup (for dev)
+        if: matrix.environment == 'dev'
+        run: |
+          php artisan key:generate
+          php artisan migrate:fresh --seed
+
+      - name: Determine Migrations to Run
+        id: migrations
+        run: |
+          MIGRATIONS=$(php artisan migrate:status --pending | grep -E "(Pending|No migrations found)" -v | awk '{print $1}')
+          echo "::set-output name=list::$MIGRATIONS"
+
+      - name: Run Migrations
+        if: steps.migrations.outputs.list != ''
+        run: |
+          for migration in ${{ fromJson(steps.migrations.outputs.list) }}; do
+            TARGET=$(grep -oP '(?<=TARGET: ).*' database/migrations/$migration)
+            GH_OST_ALTER=$(grep -oP '(?<=gh-ost: ).*' database/migrations/$migration)
+
+            if [[ -z "$TARGET" || "$TARGET" == *"${{ matrix.environment }}"* ]]; then
+              if [[ ! -z "$GH_OST_ALTER" ]]; then
+                echo "Running gh-ost migration: $migration"
+                echo "gh-ost alter: $GH_OST_ALTER"
+
+                # ***ESCAPE SPECIAL CHARACTERS IN ALTER STATEMENT***
+                GH_OST_ALTER=$(echo "$GH_OST_ALTER" | sed 's/"/\\"/g') # Escape double quotes
+
+                gh-ost \
+                  --host="${{ secrets.DB_HOST }}" \
+                  --port="${{ secrets.DB_PORT }}" \
+                  --user="${{ secrets.DB_USERNAME }}" \
+                  --password="${{ secrets.DB_PASSWORD }}" \
+                  --database="${{ secrets.DB_DATABASE }}" \
+                  --table=users \
+                  --alter="$GH_OST_ALTER" \
+                  --execute
+              else
+                echo "Running standard migration: $migration"
+                php artisan migrate --path=database/migrations/$migration --force
+              fi
+            fi
+          done
+
+      - name: Deploy to Server (staging/prod)
+        if: matrix.environment != 'dev'
+        run: |
+          echo "Deploying to ${{ matrix.environment }} server..."
+          # Your deployment commands here
