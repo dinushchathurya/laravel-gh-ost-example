@@ -24,7 +24,7 @@ jobs:
           sudo mv gh-ost /usr/local/bin/
 
       - name: Install doctrine/dbal
-        run: composer require doctrine/dbal --no-interaction --no-dev
+        run: composer require doctrine/dbal --no-interaction 
 
       - name: Check for migration changes
         id: check_migrations
