@@ -145,7 +145,7 @@ jobs:
         run: php artisan migrate --force --no-interaction
 
       - name: Grant root access from gateway host
-        run: mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "GRANT ALL PRIVILEGES ON *.* TO 'root'@'172.17.0.1' IDENTIFIED BY '${{ secrets.MYSQL_ROOT_PASSWORD }}'; FLUSH PRIVILEGES;"
+        run: mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "GRANT ALL PRIVILEGES ON *.* TO 'root'@'172.17.0.1'; FLUSH PRIVILEGES;"
         env:
           MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
 
