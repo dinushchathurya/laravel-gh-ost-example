@@ -1,147 +1,65 @@
-name: Deploy Database Changes (Dev Only - Both Standard and gh-ost)
+name: Deploy
 
 on:
   push:
     branches:
       - dev
-    paths:
-      - 'database/migrations/**'
-  pull_request:
-    branches:
-      - dev
-    paths:
-      - 'database/migrations/**'
 
 jobs:
-  deploy-dev:
-    name: Deploy to Dev
-    if: github.ref == 'refs/heads/dev' && contains(github.event.commits.*.modified, 'database/migrations')
+  deploy:
     runs-on: ubuntu-latest
-    environment: dev
     services:
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_ROOT_PASSWORD: root
+          MYSQL_ROOT_PASSWORD: root_password
           MYSQL_DATABASE: test_database
         ports:
           - 3306:3306
         options: >-
-          --health-cmd "mysqladmin ping -h localhost"
+          --health-cmd "mysqladmin ping"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
 
-      - name: Setup PHP
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.1'
           extensions: pdo, mysql
 
       - name: Install Composer dependencies
-        run: composer install --no-interaction --no-dev --optimize-autoloader
+        run: composer install --no-dev --optimize-autoloader
 
-      - name: Set environment variables
+      - name: Create .env file
         run: |
-          echo "APP_ENV=testing" >> $GITHUB_ENV # or your dev env name
-          echo "DB_CONNECTION=mysql" >> $GITHUB_ENV
-          echo "DB_HOST=127.0.0.1" >> $GITHUB_ENV
-          echo "DB_PORT=3306" >> $GITHUB_ENV
-          echo "DB_DATABASE=test_database" >> $GITHUB_ENV
-          echo "DB_USERNAME=root" >> $GITHUB_ENV
-          echo "DB_PASSWORD=root" >> $GITHUB_ENV
+          touch .env
+          echo "APP_KEY=base64:$(php artisan key:generate --show)" >> .env
+          echo "DB_CONNECTION=mysql" >> .env
+          echo "DB_HOST=127.0.0.1" >> .env
+          echo "DB_PORT=3306" >> .env
+          echo "DB_DATABASE=test_database" >> .env
+          echo "DB_USERNAME=root" >> .env
+          echo "DB_PASSWORD=root_password" >> .env
 
-      - name: Wait for MySQL to be ready
-        run: sleep 15
+      - name: Run migrations (regular migrations)
+        run: php artisan migrate --force --no-interaction
 
-      - name: Run Migrations
+      - name: Download gh-ost binary
         run: |
-          php artisan config:clear
-          php artisan cache:clear
+          wget https://github.com/github/gh-ost/releases/download/v1.1.7/gh-ost-binary-linux-amd64-20241219160321.tar.gz
+          tar -xvf gh-ost-binary-linux-amd64-20241219160321.tar.gz
+          sudo mv gh-ost /usr/local/bin/ # Move to a directory in PATH
+          sudo chmod +x /usr/local/bin/gh-ost
 
-          echo "Running standard migrations..."
-          php artisan migrate --force
-
-          # Handle different event types to avoid jq null error
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            # Direct push: Get all migrations since last common ancestor
-            CHANGED_MIGRATION_COMMITS=$(git log --pretty=format:"%H" $(git merge-base origin/dev HEAD)..HEAD -- database/migrations)
-            if [[ -z "$CHANGED_MIGRATION_COMMITS" ]]; then
-                echo "No commits modifying migrations found. Skipping gh-ost migrations."
-                exit 0
-            fi
-            MIGRATIONS=$(git diff --name-only $(git merge-base origin/dev HEAD) HEAD -- database/migrations)
-
-          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            # Pull request: Use github.event.commits
-            CHANGED_MIGRATION_COMMITS=$(echo '${{ toJSON(github.event.commits) }}' | jq -r '.[] | select(.modified[] | startswith("database/migrations")) | .id')
-            if [[ -z "$CHANGED_MIGRATION_COMMITS" ]]; then
-                echo "No commits modifying migrations found. Skipping gh-ost migrations."
-                exit 0
-            fi
-            MIGRATIONS=$(git diff --name-only $(git merge-base origin/dev $CHANGED_MIGRATION_COMMITS) ${{ github.sha }} -- database/migrations)
-          fi
-
-          if [[ -z "$MIGRATIONS" ]]; then
-            echo "No migration files changed. Skipping gh-ost migrations."
-            exit 0
-          fi
-
-          echo "Running gh-ost migrations..."
-          for MIGRATION in $MIGRATIONS; do
-            GHOST=$(grep "gh-ost:true" "$MIGRATION")
-            MIGRATION_NAME=$(basename "$MIGRATION")
-
-            # Check if the migration has already been run
-            MIGRATION_EXISTS=$(php artisan db:select "SELECT * FROM migrations WHERE migration = '${MIGRATION_NAME}'")
-            if [[ -z "$MIGRATION_EXISTS" ]]; then # Only run if migration doesn't exist
-                if [[ -n "$GHOST" ]]; then
-                    echo "Running gh-ost migration: $MIGRATION"
-                    TABLE_NAME=$(grep "Schema::(create|table)\('\|Schema::(create|table)\("" "$MIGRATION" | awk -F"'" '{print $2}' | sed 's/.$//' )
-                    if [[ -z "$TABLE_NAME" ]]; then
-                      echo "Could not find table name. Skipping gh-ost."
-                      continue
-                    fi
-
-                    ALTER_STATEMENT=$(sed -n '/Schema::(create|table)/,/});/p' "$MIGRATION" | sed "s/Schema::(create|table)('${TABLE_NAME}'|(\"${TABLE_NAME}\"))/ALTER TABLE ${TABLE_NAME}/g" | sed 's/^\s*//' | tr -d '\n' | sed 's/;//g; s/,\s*/,/g')
-                    if [[ -z "$ALTER_STATEMENT" ]]; then
-                        echo "Could not find alter statement. Skipping gh-ost."
-                        continue
-                    fi
-                    echo "Alter statement: $ALTER_STATEMENT"
-
-                    gh-ost \
-                      --host="${DB_HOST}" \
-                      --user="${DB_USERNAME}" \
-                      --password="${DB_PASSWORD}" \
-                      --database="${DB_DATABASE}" \
-                      --table="${TABLE_NAME}" \
-                      --execute \
-                      --alter="$ALTER_STATEMENT" \
-                      --verbose \
-                      || { echo "gh-ost failed. Check logs."; exit 1; }
-
-                    php artisan db:insert "INSERT INTO migrations (migration, batch) VALUES ('${MIGRATION_NAME}', (SELECT MAX(batch) + 1 FROM migrations))"
-                fi
-            else
-                echo "gh-ost migration $MIGRATION_NAME already run. Skipping."
-            fi
-          done
-
-      - name: Show all tables
-        run: mysql -u root -proot -h 127.0.0.1 -e "SHOW TABLES;" test_database || exit 1
-
-      - name: Show columns in users table (with check)
-        run: |
-          TABLE_EXISTS=$(mysql -u root -proot -h 127.0.0.1 -e "SHOW TABLES LIKE 'users';" test_database | grep users)
-          if [[ -n "$TABLE_EXISTS" ]]; then
-            mysql -u root -proot -h 127.0.0.1 -e "DESCRIBE users;" test_database || exit 1
-          else
-            echo "Table 'users' does not exist."
-          fi
-
-      - name: Run Tests
-        run: php artisan test
+      - name: Run gh-ost migrations
+        run: bash gh-ost-migrate.sh
+        env:
+            DB_HOST: 127.0.0.1
+            DB_PORT: 3306
+            DB_DATABASE: test_database
+            DB_USERNAME: root
+            DB_PASSWORD: root_password
