@@ -63,17 +63,30 @@ jobs:
           tar -xvf gh-ost-binary-linux-amd64-20241219160321.tar.gz
           sudo mv gh-ost /usr/local/bin/ # Move to a directory in PATH
           sudo chmod +x /usr/local/bin/gh-ost
-
-      - name: Run gh-ost migrations
+      
+      - name: Direct gh-ost Test
         run: |
-          php artisan migrate --force --no-interaction
-          bash gh-ost-migrate.sh
-        env:
-            DB_HOST: 127.0.0.1
-            DB_PORT: 3306
-            DB_DATABASE: test_database
-            DB_USERNAME: root
-            DB_PASSWORD: root_password
+          mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "CREATE TABLE test_table (id INT PRIMARY KEY);"
+          gh-ost \
+            --host=127.0.0.1 \
+            --port=3306 \
+            --database=test_database \
+            --user=root \
+            --password=root_password \
+            --table=test_table \
+            --alter="ADD COLUMN test_col INT" \
+            --execute 2>&1
+
+      # - name: Run gh-ost migrations
+      #   run: |
+      #     php artisan migrate --force --no-interaction
+      #     bash gh-ost-migrate.sh
+      #   env:
+      #       DB_HOST: 127.0.0.1
+      #       DB_PORT: 3306
+      #       DB_DATABASE: test_database
+      #       DB_USERNAME: root
+      #       DB_PASSWORD: root_password
       
       - name: Show table columns after gh-ost migration
         run: |
