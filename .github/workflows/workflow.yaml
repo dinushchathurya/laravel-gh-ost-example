@@ -1,62 +1,144 @@
-name: Test MySQL Migrations
+name: Deploy Database Changes (Both Standard and gh-ost with Testing and Inspection)
 
 on:
   push:
     branches:
-      - dev
+      - main
+      - develop
+      - staging
+    paths:
+      - 'database/migrations/**'
   pull_request:
     branches:
-      - dev
+      - main
+      - develop
+      - staging
+    paths:
+      - 'database/migrations/**'
 
 jobs:
-  test_migrations:
+  deploy:
     runs-on: ubuntu-latest
-
+    strategy:
+      matrix:
+        environment: [dev, stg, prod]
+        branch: [develop, staging, main]
+    if: (github.ref == format('refs/heads/{0}', matrix.branch) || (github.event_name == 'pull_request' && contains(github.base_ref, matrix.branch))) && contains(github.event.commits.*.modified, 'database/migrations')
     services:
       mysql:
         image: mysql:8.0
-        ports:
-          - 3306:3306
         env:
           MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: test_db
+          MYSQL_DATABASE: test_database
+        ports:
+          - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping --silent"
-          --health-start-period=10s
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=3
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
-    - name: Check out code
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Set up PHP and Composer (if using Laravel or PHP)
-      uses: shivammathur/setup-php@v2
-      with:
-        php-version: '8.1'
-        extensions: mysqli, pdo_mysql
-        coverage: none
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: pdo, mysql
 
-    - name: Install dependencies with Composer
-      run: composer install --no-interaction --prefer-dist
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --no-dev --optimize-autoloader
 
-    - name: Wait for MySQL to be ready
-      run: |
-        while ! mysqladmin ping --host=localhost --user=root --password=root --silent; do
-          echo "Waiting for MySQL to be ready..."
-          sleep 5
-        done
-        echo "MySQL is ready!"
+      - name: Set environment variables for testing
+        run: |
+          echo "APP_ENV=testing" >> $GITHUB_ENV
+          echo "DB_CONNECTION=mysql" >> $GITHUB_ENV
+          echo "DB_HOST=127.0.0.1" >> $GITHUB_ENV
+          echo "DB_PORT=3306" >> $GITHUB_ENV
+          echo "DB_DATABASE=test_database" >> $GITHUB_ENV
+          echo "DB_USERNAME=root" >> $GITHUB_ENV
+          echo "DB_PASSWORD=root" >> $GITHUB_ENV
 
-    - name: Run migrations
-      run: php artisan migrate --env=testing
+      - name: Wait for MySQL to be ready
+        run: sleep 15
 
-    - name: Verify migration success
-      run: |
-        if php artisan migrate:status | grep -q 'No migrations'; then
-          echo "No migrations have been applied, which is a failure!"
-          exit 1
-        else
-          echo "Migrations applied successfully!"
-        fi
+      - name: Run Migrations
+        run: |
+          php artisan config:clear
+          php artisan cache:clear
+
+          # Run standard migrations FIRST
+          echo "Running standard migrations..."
+          php artisan migrate --force
+
+          # Get changed migration files ONLY from commits that modified migrations
+          CHANGED_MIGRATION_COMMITS=$(echo '${{ toJSON(github.event.commits) }}' | jq -r '.[] | select(.modified[] | startswith("database/migrations")) | .id')
+          if [[ -z "$CHANGED_MIGRATION_COMMITS" ]]; then
+              echo "No commits modifying migrations found. Skipping gh-ost migrations."
+              exit 0
+          fi
+          MIGRATIONS=$(git diff --name-only $(git merge-base origin/${{ matrix.branch }} $CHANGED_MIGRATION_COMMITS) ${{ github.sha }} -- database/migrations)
+
+          if [[ -z "$MIGRATIONS" ]]; then
+            echo "No migration files changed. Skipping gh-ost migrations."
+            exit 0
+          fi
+
+          # Then run gh-ost migrations ONLY if the migration file changed
+          echo "Running gh-ost migrations..."
+          for MIGRATION in $MIGRATIONS; do
+            GHOST=$(grep "gh-ost:true" "$MIGRATION")
+            MIGRATION_NAME=$(basename "$MIGRATION")
+
+            # Check if the migration has already been run
+            MIGRATION_EXISTS=$(php artisan db:select "SELECT * FROM migrations WHERE migration = '${MIGRATION_NAME}'")
+            if [[ -z "$MIGRATION_EXISTS" ]]; then # Only run if migration doesn't exist
+                if [[ -n "$GHOST" ]]; then
+                    echo "Running gh-ost migration: $MIGRATION"
+                    TABLE_NAME=$(grep "Schema::(create|table)\('\|Schema::(create|table)\("" "$MIGRATION" | awk -F"'" '{print $2}' | sed 's/.$//' )
+                    if [[ -z "$TABLE_NAME" ]]; then
+                      echo "Could not find table name. Skipping gh-ost."
+                      continue
+                    fi
+
+                    ALTER_STATEMENT=$(sed -n '/Schema::(create|table)/,/});/p' "$MIGRATION" | sed "s/Schema::(create|table)('${TABLE_NAME}'|(\"${TABLE_NAME}\"))/ALTER TABLE ${TABLE_NAME}/g" | sed 's/^\s*//' | tr -d '\n' | sed 's/;//g; s/,\s*/,/g')
+                    if [[ -z "$ALTER_STATEMENT" ]]; then
+                        echo "Could not find alter statement. Skipping gh-ost."
+                        continue
+                    fi
+                    echo "Alter statement: $ALTER_STATEMENT"
+
+                    gh-ost \
+                      --host="${DB_HOST}" \
+                      --user="${DB_USERNAME}" \
+                      --password="${DB_PASSWORD}" \
+                      --database="${DB_DATABASE}" \
+                      --table="${TABLE_NAME}" \
+                      --execute \
+                      --alter="$ALTER_STATEMENT" \
+                      --verbose \
+                      || { echo "gh-ost failed. Check logs."; exit 1; }
+
+                    php artisan db:insert "INSERT INTO migrations (migration, batch) VALUES ('${MIGRATION_NAME}', (SELECT MAX(batch) + 1 FROM migrations))"
+                fi
+            else
+                echo "gh-ost migration $MIGRATION_NAME already run. Skipping."
+            fi
+          done
+
+      - name: Show all tables
+        run: mysql -u root -proot -h 127.0.0.1 -e "SHOW TABLES;" test_database || exit 1
+
+      - name: Show columns in users table (with check)
+        run: |
+          TABLE_EXISTS=$(mysql -u root -proot -h 127.0.0.1 -e "SHOW TABLES LIKE 'users';" test_database | grep users)
+          if [[ -n "$TABLE_EXISTS" ]]; then
+            mysql -u root -proot -h 127.0.0.1 -e "DESCRIBE users;" test_database || exit 1
+          else
+            echo "Table 'users' does not exist."
+          fi
+
+      - name: Run Tests
+        run: php artisan test
