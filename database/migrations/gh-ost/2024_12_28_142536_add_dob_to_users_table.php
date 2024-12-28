@@ -13,11 +13,11 @@ class AddDobToUsersTable extends Migration
      */
     public function up()
     {
+        // gh-ost: ALTER TABLE users ADD dob DATE NULL after email;
         Schema::table('users', function (Blueprint $table) {
             $table->date('dob')->nullable()->after('email');
         });
 
-        // gh-ost: ALTER TABLE users ADD dob DATE NULL after email;
     }
 
     /**
