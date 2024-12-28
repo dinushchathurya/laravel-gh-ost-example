@@ -44,6 +44,12 @@ jobs:
           echo "DB_DATABASE=test_database" >> .env
           echo "DB_USERNAME=root" >> .env
           echo "DB_PASSWORD=root_password" >> .env
+      
+      - name: Check MySQL configuration
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "SHOW VARIABLES LIKE 'log_bin';"
+          mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "SHOW VARIABLES LIKE 'binlog_format';"
+          mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "SHOW GRANTS FOR 'root'@'%';"
 
       - name: Run migrations (regular migrations)
         run: php artisan migrate --force --no-interaction
