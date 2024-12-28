@@ -1,29 +1,13 @@
-name: Deploy Database Changes (Both Standard and gh-ost with Testing and Inspection)
+name: Deploy Database Changes (Dev Only - Both Standard and gh-ost)
 
 on:
   push:
     branches:
-      - main
-      - dev
-      - stg
-    paths:
-      - 'database/migrations/**'
-  pull_request:
-    branches:
-      - main
-      - dev
-      - stg
-    paths:
-      - 'database/migrations/**'
-
+      - dev # Only on develop branch
 jobs:
-  deploy:
+  deploy-dev:
+    name: Deploy to Dev
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        environment: [dev, stg, prod]
-        branch: [dev, stg, prod]
-    if: (github.ref == format('refs/heads/{0}', matrix.branch) || (github.event_name == 'pull_request' && contains(github.base_ref, matrix.branch))) && contains(github.event.commits.*.modified, 'database/migrations')
     services:
       mysql:
         image: mysql:8.0
@@ -37,7 +21,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -51,9 +34,9 @@ jobs:
       - name: Install Composer dependencies
         run: composer install --no-interaction --no-dev --optimize-autoloader
 
-      - name: Set environment variables for testing
+      - name: Set environment variables
         run: |
-          echo "APP_ENV=testing" >> $GITHUB_ENV
+          echo "APP_ENV=testing" >> $GITHUB_ENV # or your dev env name
           echo "DB_CONNECTION=mysql" >> $GITHUB_ENV
           echo "DB_HOST=127.0.0.1" >> $GITHUB_ENV
           echo "DB_PORT=3306" >> $GITHUB_ENV
@@ -79,7 +62,7 @@ jobs:
               echo "No commits modifying migrations found. Skipping gh-ost migrations."
               exit 0
           fi
-          MIGRATIONS=$(git diff --name-only $(git merge-base origin/${{ matrix.branch }} $CHANGED_MIGRATION_COMMITS) ${{ github.sha }} -- database/migrations)
+          MIGRATIONS=$(git diff --name-only $(git merge-base origin/develop $CHANGED_MIGRATION_COMMITS) ${{ github.sha }} -- database/migrations)
 
           if [[ -z "$MIGRATIONS" ]]; then
             echo "No migration files changed. Skipping gh-ost migrations."
