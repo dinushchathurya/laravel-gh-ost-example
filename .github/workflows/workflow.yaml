@@ -3,11 +3,21 @@ name: Deploy Database Changes (Dev Only - Both Standard and gh-ost)
 on:
   push:
     branches:
-      - dev # Only on develop branch
+      - develop
+    paths:
+      - 'database/migrations/**'
+  pull_request:
+    branches:
+      - develop
+    paths:
+      - 'database/migrations/**'
+
 jobs:
   deploy-dev:
     name: Deploy to Dev
+    if: github.ref == 'refs/heads/develop' && contains(github.event.commits.*.modified, 'database/migrations')
     runs-on: ubuntu-latest
+    environment: dev
     services:
       mysql:
         image: mysql:8.0
@@ -52,24 +62,34 @@ jobs:
           php artisan config:clear
           php artisan cache:clear
 
-          # Run standard migrations FIRST
           echo "Running standard migrations..."
           php artisan migrate --force
 
-          # Get changed migration files ONLY from commits that modified migrations
-          CHANGED_MIGRATION_COMMITS=$(echo '${{ toJSON(github.event.commits) }}' | jq -r '.[] | select(.modified[] | startswith("database/migrations")) | .id')
-          if [[ -z "$CHANGED_MIGRATION_COMMITS" ]]; then
-              echo "No commits modifying migrations found. Skipping gh-ost migrations."
-              exit 0
+          # Handle different event types to avoid jq null error
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            # Direct push: Get all migrations since last common ancestor
+            CHANGED_MIGRATION_COMMITS=$(git log --pretty=format:"%H" $(git merge-base origin/develop HEAD)..HEAD -- database/migrations)
+            if [[ -z "$CHANGED_MIGRATION_COMMITS" ]]; then
+                echo "No commits modifying migrations found. Skipping gh-ost migrations."
+                exit 0
+            fi
+            MIGRATIONS=$(git diff --name-only $(git merge-base origin/develop HEAD) HEAD -- database/migrations)
+
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # Pull request: Use github.event.commits
+            CHANGED_MIGRATION_COMMITS=$(echo '${{ toJSON(github.event.commits) }}' | jq -r '.[] | select(.modified[] | startswith("database/migrations")) | .id')
+            if [[ -z "$CHANGED_MIGRATION_COMMITS" ]]; then
+                echo "No commits modifying migrations found. Skipping gh-ost migrations."
+                exit 0
+            fi
+            MIGRATIONS=$(git diff --name-only $(git merge-base origin/develop $CHANGED_MIGRATION_COMMITS) ${{ github.sha }} -- database/migrations)
           fi
-          MIGRATIONS=$(git diff --name-only $(git merge-base origin/develop $CHANGED_MIGRATION_COMMITS) ${{ github.sha }} -- database/migrations)
 
           if [[ -z "$MIGRATIONS" ]]; then
             echo "No migration files changed. Skipping gh-ost migrations."
             exit 0
           fi
 
-          # Then run gh-ost migrations ONLY if the migration file changed
           echo "Running gh-ost migrations..."
           for MIGRATION in $MIGRATIONS; do
             GHOST=$(grep "gh-ost:true" "$MIGRATION")
