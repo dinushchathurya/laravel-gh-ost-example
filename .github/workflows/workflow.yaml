@@ -1,48 +1,62 @@
-name: Run Migrations with gh-ost
+name: Test MySQL Migrations
 
 on:
-  workflow_dispatch:
   push:
     branches:
-      - dev
+      - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
-  migrations:
+  test_migrations:
     runs-on: ubuntu-latest
 
     services:
       mysql:
         image: mysql:8.0
-        env:
-          MYSQL_ALLOW_EMPTY_PASSWORD: yes
-          MYSQL_DATABASE: test
         ports:
           - 3306:3306
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: test_db
         options: >-
-          --health-cmd="mysqladmin ping -h localhost -uroot -proot"
+          --health-cmd="mysqladmin ping --silent"
+          --health-start-period=10s
           --health-interval=10s
           --health-timeout=5s
           --health-retries=3
 
-
     steps:
-    - name: Checkout Code
+    - name: Check out code
       uses: actions/checkout@v3
-    
-    - name: Create Database
-      run: |
-        mysql -h 127.0.0.1 -u root -proot -e "CREATE DATABASE laravel_gh_ost;"
-        mysql -h
 
-    - name: Install gh-ost
-      run: |
-        curl -L https://github.com/github/gh-ost/releases/download/v1.1.7/gh-ost-binary-linux-amd64-20241219160321.tar.gz -o gh-ost.tar.gz
-        tar -xf gh-ost.tar.gz
-        chmod +x gh-ost  # Make gh-ost executable
-        sudo mv gh-ost /usr/local/bin/  # Move to system PATH
-        
-    - name: Set Permissions for gh-ost Script
-      run: chmod +x ./run-gh-ost.sh
+    - name: Set up PHP and Composer (if using Laravel or PHP)
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.1'
+        extensions: mysqli, pdo_mysql
+        coverage: none
 
-    - name: Run gh-ost Migrations
-      run: ./run-gh-ost.sh
+    - name: Install dependencies with Composer
+      run: composer install --no-interaction --prefer-dist
+
+    - name: Wait for MySQL to be ready
+      run: |
+        while ! mysqladmin ping --host=localhost --user=root --password=root --silent; do
+          echo "Waiting for MySQL to be ready..."
+          sleep 5
+        done
+        echo "MySQL is ready!"
+
+    - name: Run migrations
+      run: php artisan migrate --env=testing
+
+    - name: Verify migration success
+      run: |
+        if php artisan migrate:status | grep -q 'No migrations'; then
+          echo "No migrations have been applied, which is a failure!"
+          exit 1
+        else
+          echo "Migrations applied successfully!"
+        fi
