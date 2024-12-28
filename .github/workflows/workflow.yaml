@@ -66,21 +66,18 @@ jobs:
       
       - name: Direct gh-ost Test
         run: |
-          mysql -h 127.0.0.1 -P 3306 -u root -p"$MYSQL_ROOT_PASSWORD" -D test_database -e "CREATE TABLE test_table (id INT PRIMARY KEY);"
+          mysql -h 127.0.0.1 -P 3306 -u root -p root_password -D test_database -e "CREATE TABLE test_table (id INT PRIMARY KEY);"
           gh-ost \
             --host=127.0.0.1 \
             --port=3306 \
             --database=test_database \
             --user=root \
-            --password="$MYSQL_ROOT_PASSWORD" \
+            --password=root_password \
             --table=test_table \
             --alter="ADD COLUMN test_col INT" \
-            --allow-on-master \ # Add this flag!
             --execute 2>&1
-          mysql -h 127.0.0.1 -P 3306 -u root -p"$MYSQL_ROOT_PASSWORD" -D test_database -e "DESCRIBE test_table;"
-          mysql -h 127.0.0.1 -P 3306 -u root -p"$MYSQL_ROOT_PASSWORD" -D test_database -e "DROP TABLE test_table;"
-        env:
-          MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+          mysql -h 127.0.0.1 -P 3306 -u root -p root_password -D test_database -e "DESCRIBE test_table;"
+          mysql -h 127.0.0.1 -P 3306 -u root -p root_password -D test_database -e "DROP TABLE test_table;"
 
       # - name: Run gh-ost migrations
       #   run: |
