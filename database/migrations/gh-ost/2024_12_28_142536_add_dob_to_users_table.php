@@ -16,6 +16,8 @@ class AddDobToUsersTable extends Migration
         Schema::table('users', function (Blueprint $table) {
             $table->date('dob')->nullable()->after('email');
         });
+
+        // gh-ost: ALTER TABLE users ADD dob DATE NULL after email;
     }
 
     /**
@@ -27,7 +29,6 @@ class AddDobToUsersTable extends Migration
     {
         Schema::table('users', function (Blueprint $table) {
             $table->dropColumn('dob');
-
         });
         DB::table('migrations')->where('migration', basename(__FILE__, '.php'))->delete();
     }

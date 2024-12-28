@@ -29,7 +29,7 @@ execute_gh_ost() {
 
     if [[ $? -ne 0 ]]; then
         echo "gh-ost failed!"
-        return 1 # Important: Return 1 to indicate failure
+        return 1 # Return 1 to indicate failure
     fi
     return 0
 }
@@ -37,7 +37,8 @@ execute_gh_ost() {
 find database/migrations/gh-ost -maxdepth 1 -name "*.php" -print0 | while IFS= read -r -d $'\0' migration_file; do
     migration_name=$(basename "$migration_file" .php)
 
-    if [[ $(php artisan db:table migrations --show | grep "$migration_name") ]]; then
+    # Check if migration has already been applied
+    if [[ $(php artisan migrate:status | grep "$migration_name") ]]; then
         echo "Migration $migration_name already applied. Skipping."
         continue
     fi
@@ -47,6 +48,7 @@ find database/migrations/gh-ost -maxdepth 1 -name "*.php" -print0 | while IFS= r
     # Run the migration FIRST to generate the SQL
     php artisan migrate --path="database/migrations/gh-ost/$(basename "$migration_file")" --force --no-interaction
 
+    # Extract the table name from the migration
     TABLE_NAME=$(grep -oP "(?<=Schema::table\(')[^']+" "$migration_file")
     if [[ -z "$TABLE_NAME" ]]; then
         TABLE_NAME=$(grep -oP "(?<=Schema::create\(')[^']+" "$migration_file")
@@ -58,20 +60,15 @@ find database/migrations/gh-ost -maxdepth 1 -name "*.php" -print0 | while IFS= r
         continue
     fi
 
-    # Capture the actual ALTER TABLE statement from the query log
-    ALTER_TABLE_SQL=$(php artisan migrate --path="database/migrations/gh-ost/$(basename "$migration_file")" --pretend --force --no-interaction | grep "ALTER TABLE")
+    # Extract the ALTER TABLE SQL from the comment in the migration
+    ALTER_TABLE_SQL=$(grep "//gh-ost:" "$migration_file" | sed 's/.*gh-ost: //')
 
     echo "** Actual ALTER TABLE SQL from migration: **"
     echo "$ALTER_TABLE_SQL"
 
     if [[ -n "$ALTER_TABLE_SQL" ]]; then
-        if execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL"; then # Check the return code of execute_gh_ost
-            batch=$(php artisan db:table migrations --show | grep -oP '^[0-9]+' | tail -1)
-            if [[ -z "$batch" ]]; then
-                batch=1
-            else
-                batch=$((batch+1))
-            fi
+        if execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL"; then
+            # After gh-ost is successful, mark the migration as applied
             php artisan migrate --path="database/migrations/gh-ost/$(basename "$migration_file")" --database=mysql --force --no-interaction
         else
             echo "gh-ost execution failed. Rolling back migration."
@@ -82,7 +79,6 @@ find database/migrations/gh-ost -maxdepth 1 -name "*.php" -print0 | while IFS= r
         php artisan migrate:rollback --path="database/migrations/gh-ost/$(basename "$migration_file")" --force --no-interaction
         continue
     fi
-    php artisan migrate:rollback --path="database/migrations/gh-ost/$(basename "$migration_file")" --force --no-interaction
 done
 
 echo "gh-ost migrations complete."
