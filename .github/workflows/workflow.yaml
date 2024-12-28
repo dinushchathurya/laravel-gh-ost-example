@@ -119,17 +119,21 @@ jobs:
           --health-timeout 5s
           --health-retries 5
         volumes:
+          - ./init.sql:/docker-entrypoint-initdb.d/init.sql
           - mysql_data:/var/lib/mysql
 
     steps:
       - uses: actions/checkout@v3
+
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.1'
           extensions: pdo, mysql
+
       - name: Install Composer dependencies
         run: composer install --no-dev --optimize-autoloader
+
       - name: Create .env file
         run: |
           touch .env
@@ -144,10 +148,10 @@ jobs:
       - name: Run migrations (regular migrations)
         run: php artisan migrate --force --no-interaction
 
-      - name: Grant root access from gateway host
-        run: mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "GRANT ALL PRIVILEGES ON *.* TO 'root'@'172.17.0.1'; FLUSH PRIVILEGES;"
-        env:
-          MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+      - name: Create MySQL init script
+        run: |
+          echo "GRANT ALL PRIVILEGES ON *.* TO 'root'@'172.17.0.1' IDENTIFIED BY '${{ secrets.MYSQL_ROOT_PASSWORD }}';" > init.sql
+          echo "FLUSH PRIVILEGES;" >> init.sql
 
       - name: Direct gh-ost Test
         run: |
@@ -166,3 +170,7 @@ jobs:
           mysql -h 127.0.0.1 -P 3306 -u root -proot_password -D test_database -e "DROP TABLE test_table;"
         env:
           MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+
+      - name: Clean up MySQL init script
+        if: always()
+        run: rm init.sql
