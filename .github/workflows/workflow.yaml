@@ -3,19 +3,19 @@ name: Deploy Database Changes (Dev Only - Both Standard and gh-ost)
 on:
   push:
     branches:
-      - develop
+      - dev
     paths:
       - 'database/migrations/**'
   pull_request:
     branches:
-      - develop
+      - dev
     paths:
       - 'database/migrations/**'
 
 jobs:
   deploy-dev:
     name: Deploy to Dev
-    if: github.ref == 'refs/heads/develop' && contains(github.event.commits.*.modified, 'database/migrations')
+    if: github.ref == 'refs/heads/dev' && contains(github.event.commits.*.modified, 'database/migrations')
     runs-on: ubuntu-latest
     environment: dev
     services:
