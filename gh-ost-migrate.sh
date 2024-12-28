@@ -34,7 +34,7 @@ execute_gh_ost() {
     return 0
 }
 
-find database/migrations/gh-ost -maxdepth 1 -name "gh-ost_*.php" -print0 | while IFS= read -r -d $'\0' migration_file; do
+find database/migrations/gh-ost -maxdepth 1 -name "*.php" -print0 | while IFS= read -r -d $'\0' migration_file; do
     migration_name=$(basename "$migration_file" .php)
 
     if [[ $(php artisan db:table migrations --show | grep "$migration_name") ]]; then

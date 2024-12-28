@@ -1,100 +1,3 @@
-# name: Deploy
-
-# on:
-#   push:
-#     branches:
-#       - dev
-
-# jobs:
-#   deploy:
-#     runs-on: ubuntu-latest
-#     services:
-#       mysql:
-#         image: mysql:8.0
-#         env:
-#           MYSQL_ROOT_PASSWORD: root_password
-#           MYSQL_DATABASE: test_database
-#         ports:
-#           - 3306:3306
-#         options: >-
-#           --health-cmd "mysqladmin ping"
-#           --health-interval 10s
-#           --health-timeout 5s
-#           --health-retries 5
-
-#     steps:
-#       - uses: actions/checkout@v3
-
-#       - name: Set up PHP
-#         uses: shivammathur/setup-php@v2
-#         with:
-#           php-version: '8.1'
-#           extensions: pdo, mysql
-
-#       - name: Install Composer dependencies
-#         run: composer install --no-dev --optimize-autoloader
-
-#       - name: Create .env file
-#         run: |
-#           touch .env
-#           echo "APP_KEY=base64:$(php artisan key:generate --show)" >> .env
-#           echo "DB_CONNECTION=mysql" >> .env
-#           echo "DB_HOST=127.0.0.1" >> .env
-#           echo "DB_PORT=3306" >> .env
-#           echo "DB_DATABASE=test_database" >> .env
-#           echo "DB_USERNAME=root" >> .env
-#           echo "DB_PASSWORD=root_password" >> .env
-      
-#       - name: Check MySQL configuration
-#         run: |
-#           mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "SHOW VARIABLES LIKE 'log_bin';"
-#           mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "SHOW VARIABLES LIKE 'binlog_format';"
-#           mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "SHOW GRANTS FOR 'root'@'%';"
-
-#       # - name: Run migrations (regular migrations)
-#       #   run: php artisan migrate --force --no-interaction
-      
-#       # - name: Show table columns 
-#       #   run: mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "DESCRIBE users;"
-
-#       - name: Download gh-ost binary
-#         run: |
-#           wget https://github.com/github/gh-ost/releases/download/v1.1.7/gh-ost-binary-linux-amd64-20241219160321.tar.gz
-#           tar -xvf gh-ost-binary-linux-amd64-20241219160321.tar.gz
-#           sudo mv gh-ost /usr/local/bin/ # Move to a directory in PATH
-#           sudo chmod +x /usr/local/bin/gh-ost
-      
-#       - name: Direct gh-ost Test
-#         run: |
-#           mysql -h 127.0.0.1 -P 3306 -u root -p root_password -D test_database -e "CREATE TABLE test_table (id INT PRIMARY KEY);"
-#           gh-ost \
-#             --host=127.0.0.1 \
-#             --port=3306 \
-#             --database=test_database \
-#             --user=root \
-#             --password=root_password \
-#             --table=test_table \
-#             --alter="ADD COLUMN test_col INT" \
-#             --execute 2>&1
-#           mysql -h 127.0.0.1 -P 3306 -u root -p root_password -D test_database -e "DESCRIBE test_table;"
-#           mysql -h 127.0.0.1 -P 3306 -u root -p root_password -D test_database -e "DROP TABLE test_table;"
-
-#       # - name: Run gh-ost migrations
-#       #   run: |
-#       #     php artisan migrate --force --no-interaction
-#       #     bash gh-ost-migrate.sh
-#       #   env:
-#       #       DB_HOST: 127.0.0.1
-#       #       DB_PORT: 3306
-#       #       DB_DATABASE: test_database
-#       #       DB_USERNAME: root
-#       #       DB_PASSWORD: root_password
-      
-#       - name: Show table columns after gh-ost migration
-#         run: |
-#           mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "DESCRIBE users;"
-#           mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "SHOW TABLES LIKE '_users_gho%';"4
-
 name: Deploy
 
 on:
@@ -118,9 +21,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-        volumes:
-          - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-          - mysql_data:/var/lib/mysql
 
     steps:
       - uses: actions/checkout@v3
@@ -143,34 +43,35 @@ jobs:
           echo "DB_PORT=3306" >> .env
           echo "DB_DATABASE=test_database" >> .env
           echo "DB_USERNAME=root" >> .env
-          echo "DB_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}" >> .env
+          echo "DB_PASSWORD=root_password" >> .env
+      
+      - name: Check MySQL configuration
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "SHOW VARIABLES LIKE 'log_bin';"
+          mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "SHOW VARIABLES LIKE 'binlog_format';"
+          mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "SHOW GRANTS FOR 'root'@'%';"
 
       - name: Run migrations (regular migrations)
         run: php artisan migrate --force --no-interaction
+      
+      - name: Show table columns 
+        run: mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "DESCRIBE users;"
 
-      - name: Create MySQL init script
+      - name: Download gh-ost binary
         run: |
-          echo "GRANT ALL PRIVILEGES ON *.* TO 'root'@'172.17.0.1' IDENTIFIED BY '${{ secrets.MYSQL_ROOT_PASSWORD }}';" > init.sql
-          echo "FLUSH PRIVILEGES;" >> init.sql
+          wget https://github.com/github/gh-ost/releases/download/v1.1.7/gh-ost-binary-linux-amd64-20241219160321.tar.gz
+          tar -xvf gh-ost-binary-linux-amd64-20241219160321.tar.gz
+          sudo mv gh-ost /usr/local/bin/ # Move to a directory in PATH
+          sudo chmod +x /usr/local/bin/gh-ost
 
-      - name: Direct gh-ost Test
-        run: |
-          mysql -h 127.0.0.1 -P 3306 -u root -p"$MYSQL_ROOT_PASSWORD" -D test_database -e "CREATE TABLE test_table (id INT PRIMARY KEY);"
-          gh-ost \
-            --host=127.0.0.1 \
-            --port=3306 \
-            --database=test_database \
-            --user=root \
-            --password="$MYSQL_ROOT_PASSWORD" \
-            --table=test_table \
-            --alter="ADD COLUMN test_col INT" \
-            --allow-on-master \
-            --execute 2>&1
-          mysql -h 127.0.0.1 -P 3306 -u root -p"$MYSQL_ROOT_PASSWORD" -D test_database -e "DESCRIBE test_table;"
-          mysql -h 127.0.0.1 -P 3306 -u root -proot_password -D test_database -e "DROP TABLE test_table;"
+      - name: Run gh-ost migrations
+        run: bash gh-ost-migrate.sh
         env:
-          MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
-
-      - name: Clean up MySQL init script
-        if: always()
-        run: rm init.sql
+            DB_HOST: 127.0.0.1
+            DB_PORT: 3306
+            DB_DATABASE: test_database
+            DB_USERNAME: root
+            DB_PASSWORD: root_password
+      
+      - name: Show table columns after gh-ost migration
+        run: mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "SHOW TABLES LIKE '_users_gho%';"
