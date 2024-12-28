@@ -108,7 +108,6 @@ jobs:
     services:
       mysql:
         image: mysql:8.0
-        command: --default-authentication-plugin=mysql_native_password --log-bin=mysql-bin --binlog-format=ROW --server-id=1
         env:
           MYSQL_ROOT_PASSWORD: root_password
           MYSQL_DATABASE: test_database
