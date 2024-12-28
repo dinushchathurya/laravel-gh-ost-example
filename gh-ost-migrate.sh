@@ -30,7 +30,7 @@ execute_gh_ost() {
     fi
 }
 
-for migration_file in database/migrations/gh-ost_*.php; do
+for migration_file in database/migrations/gh-ost/*.php; do
     migration_name=$(basename "$migration_file" .php)
     if [[ $(php artisan db:table migrations --show | grep "$migration_name") ]]; then
         echo "Migration $migration_name already applied. Skipping."
@@ -50,18 +50,27 @@ for migration_file in database/migrations/gh-ost_*.php; do
         php artisan migrate:rollback --path="database/migrations/$(basename "$migration_file")" --force --no-interaction
         continue
     fi
+
     ALTER_SQL=$(php artisan migrate --path="database/migrations/$(basename "$migration_file")" --pretend --force --no-interaction | grep "ALTER TABLE")
 
     if [[ -n "$ALTER_SQL" ]]; then
         execute_gh_ost "$TABLE_NAME" "$ALTER_SQL"
+        if [[ $? -eq 0 ]]; then # Check if gh-ost was successful before syncing
+            migration_name=$(basename "$migration_file" .php)
+            batch=$(php artisan db:table migrations --show | grep -oP '^[0-9]+' | tail -1)
+            if [[ -z "$batch" ]]; then
+                batch=1
+            else
+                batch=$((batch+1))
+            fi
+            php artisan migrate --path="database/migrations/$(basename "$migration_file")" --database=mysql --force --no-interaction
+        fi
     else
         echo "Could not extract SQL from $migration_file. Skipping gh-ost execution."
         php artisan migrate:rollback --path="database/migrations/$(basename "$migration_file")" --force --no-interaction
         continue
     fi
-    batch=$(php artisan db:table migrations --show | grep -oP '^[0-9]+')
     php artisan migrate:rollback --path="database/migrations/$(basename "$migration_file")" --force --no-interaction
-    php artisan migrate --path="database/migrations/$(basename "$migration_file")" --database=mysql --force
 done
 
 echo "gh-ost migrations complete."
