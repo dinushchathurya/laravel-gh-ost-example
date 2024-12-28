@@ -1,14 +1,24 @@
 name: Deploy
 
 on:
-  push:
+  push: # To run on push to specific branches
     branches:
       - dev
+      - stg
+      - main
+  pull_request:
+    types:
+      closed # To run on PRs merged or closed
+    branches:
+      - dev
+      - stg
+      - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    services:
+    if: github.event.pull_request.merged == true # To run only on PRs merged
+    services: 
       mysql:
         image: mysql:8.0
         env:
@@ -16,8 +26,8 @@ jobs:
           MYSQL_DATABASE: test_database
         ports:
           - 3306:3306
-        options: >-
-          --health-cmd "mysqladmin ping"
+        options: >- 
+          --health-cmd "mysqladmin ping" 
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
