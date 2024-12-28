@@ -68,12 +68,12 @@ jobs:
           # Handle different event types to avoid jq null error
           if [[ "${{ github.event_name }}" == "push" ]]; then
             # Direct push: Get all migrations since last common ancestor
-            CHANGED_MIGRATION_COMMITS=$(git log --pretty=format:"%H" $(git merge-base origin/develop HEAD)..HEAD -- database/migrations)
+            CHANGED_MIGRATION_COMMITS=$(git log --pretty=format:"%H" $(git merge-base origin/dev HEAD)..HEAD -- database/migrations)
             if [[ -z "$CHANGED_MIGRATION_COMMITS" ]]; then
                 echo "No commits modifying migrations found. Skipping gh-ost migrations."
                 exit 0
             fi
-            MIGRATIONS=$(git diff --name-only $(git merge-base origin/develop HEAD) HEAD -- database/migrations)
+            MIGRATIONS=$(git diff --name-only $(git merge-base origin/dev HEAD) HEAD -- database/migrations)
 
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             # Pull request: Use github.event.commits
@@ -82,7 +82,7 @@ jobs:
                 echo "No commits modifying migrations found. Skipping gh-ost migrations."
                 exit 0
             fi
-            MIGRATIONS=$(git diff --name-only $(git merge-base origin/develop $CHANGED_MIGRATION_COMMITS) ${{ github.sha }} -- database/migrations)
+            MIGRATIONS=$(git diff --name-only $(git merge-base origin/dev $CHANGED_MIGRATION_COMMITS) ${{ github.sha }} -- database/migrations)
           fi
 
           if [[ -z "$MIGRATIONS" ]]; then

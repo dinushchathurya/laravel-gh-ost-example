@@ -19,6 +19,7 @@ class AddDobToUsersTable extends Migration
         });
     }
 
+
     /**
      * Reverse the migrations.
      *
