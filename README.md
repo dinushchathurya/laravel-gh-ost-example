@@ -1,64 +1,177 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400"></a></p>
+### Workflow
 
-<p align="center">
-<a href="https://travis-ci.org/laravel/framework"><img src="https://travis-ci.org/laravel/framework.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+```yaml
+name: Deploy gh-ost Migrations
 
-## About Laravel
+on:
+  push:
+    branches: # Trigger on push to these branches
+      - dev
+      - staging
+      - prod
+  pull_request:
+    types:
+      - closed  # Trigger when a PR is closed
+    branches:
+      - dev
+      - staging
+      - prod
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true  # Only run if the PR is merged, not just closed.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+    steps:
+      - uses: actions/checkout@v3
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: pdo, mysql
 
-## Learning Laravel
+      - name: Install Composer dependencies
+        run: composer install --no-dev --optimize-autoloader
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+      - name: Create .env file for the target environment
+        run: |
+          # Define the target environment based on the branch
+          case "$GITHUB_REF" in
+            "refs/heads/dev")
+              ENV_PREFIX="DEV"
+            ;;
+            "refs/heads/staging")
+              ENV_PREFIX="STAGING"
+              ;;
+            "refs/heads/prod")
+              ENV_PREFIX="PROD"
+              ;;
+            *)
+              echo "Unknown branch: $GITHUB_REF"
+              exit 1
+              ;;
+          esac
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains over 1500 video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+          # Set the environment variables dynamically
+          echo "APP_KEY=base64:$(php artisan key:generate --show)" >> .env
+          echo "DB_CONNECTION=mysql" >> .env
+          echo "DB_HOST=${{ secrets[ENV_PREFIX + '_DB_HOST'] }}" >> .env
+          echo "DB_USERNAME=${{ secrets[ENV_PREFIX + '_DB_USERNAME'] }}" >> .env
+          echo "DB_PASSWORD=${{ secrets[ENV_PREFIX + '_DB_PASSWORD'] }}" >> .env
+          echo "DB_DATABASE=${{ secrets[ENV_PREFIX + '_DB_DATABASE'] }}" >> .env
 
-## Laravel Sponsors
+      - name: Run gh-ost migrations
+        run: bash gh-ost-migrate.sh
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: 3306
+          DB_DATABASE: ${{ secrets.DB_DATABASE }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the Laravel [Patreon page](https://patreon.com/taylorotwell).
+```
 
-### Premium Partners
+### Script
 
-- **[Vehikl](https://vehikl.com/)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Cubet Techno Labs](https://cubettech.com)**
-- **[Cyber-Duck](https://cyber-duck.co.uk)**
-- **[Many](https://www.many.co.uk)**
-- **[Webdock, Fast VPS Hosting](https://www.webdock.io/en)**
-- **[DevSquad](https://devsquad.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel/)**
-- **[OP.GG](https://op.gg)**
-- **[WebReinvent](https://webreinvent.com/?utm_source=laravel&utm_medium=github&utm_campaign=patreon-sponsors)**
-- **[Lendio](https://lendio.com)**
+```bash
+#!/bin/bash
 
-## Contributing
+# Database credentials (using environment variables is recommended)
+DB_HOST="${DB_HOST}"
+DB_PORT="${DB_PORT:-3306}"
+DB_DATABASE="${DB_DATABASE}"
+DB_USERNAME="${DB_USERNAME}"
+DB_PASSWORD="${DB_PASSWORD}"
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+# Ensure environment variables are set
+if [[ -z "$DB_HOST" || -z "$DB_DATABASE" || -z "$DB_USERNAME" || -z "$DB_PASSWORD" ]]; then
+  echo "Database credentials are missing. Exiting."
+  exit 1
+fi
 
-## Code of Conduct
+execute_gh_ost() {
+    TABLE_NAME="$1"
+    ALTER_SQL="$2"
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+    echo "Executing gh-ost for table: $TABLE_NAME"
+    echo "SQL: $ALTER_SQL"
 
-## Security Vulnerabilities
+    GHOST_OUTPUT=$(gh-ost \
+        --host="$DB_HOST" \
+        --port="$DB_PORT" \
+        --database="$DB_DATABASE" \
+        --user="$DB_USERNAME" \
+        --password="$DB_PASSWORD" \
+        --table="$TABLE_NAME" \
+        --alter="$ALTER_SQL" \
+        --execute 2>&1)
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+    echo "gh-ost Output:"
+    echo "$GHOST_OUTPUT"
 
-## License
+    if [[ $? -ne 0 ]]; then
+        echo "gh-ost failed!"
+        return 1
+    fi
+    return 0
+}
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+find database/migrations/gh-ost -maxdepth 1 -name "*.php" -print0 | while IFS= read -r -d $'\0' migration_file; do
+    migration_name=$(basename "$migration_file" .php)
+
+    # Check if the migration has already been applied via gh-ost
+    if [[ $(mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e "SELECT * FROM gh_ost_migrations WHERE migration='$migration_name';") ]]; then
+        echo "gh-ost Migration $migration_name already applied. Skipping."
+        continue
+    fi
+
+    echo "Processing $migration_file"
+
+    # Run the migration FIRST to generate the SQL
+    php artisan migrate --path="database/migrations/gh-ost/$(basename "$migration_file")" --force --no-interaction
+
+    # Extract the table name from the migration
+    TABLE_NAME=$(grep -oP "(?<=Schema::table\(')[^']+" "$migration_file")
+    if [[ -z "$TABLE_NAME" ]]; then
+        TABLE_NAME=$(grep -oP "(?<=Schema::create\(')[^']+" "$migration_file")
+    fi
+
+    if [[ -z "$TABLE_NAME" ]]; then
+        echo "Could not extract table name from $migration_file. Skipping."
+        php artisan migrate:rollback --path="database/migrations/gh-ost/$(basename "$migration_file")" --force --no-interaction
+        continue
+    fi
+
+    # Extract the ALTER TABLE SQL from the comment in the migration
+    ALTER_TABLE_SQL=$(grep -oP "// gh-ost: .+" "$migration_file" | sed 's/.*gh-ost: //')
+
+    echo "Extracted ALTER TABLE SQL: $ALTER_TABLE_SQL"
+
+    if [[ -n "$ALTER_TABLE_SQL" ]]; then
+        if execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL"; then
+            # After gh-ost is successful, mark the migration as applied in the gh_ost_migrations table
+            mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e "INSERT INTO gh_ost_migrations (migration) VALUES ('$migration_name');"
+        else
+            echo "gh-ost execution failed. Rolling back migration."
+            php artisan migrate:rollback --path="database/migrations/gh-ost/$(basename "$migration_file")" --force --no-interaction
+        fi
+    else
+        echo "Could not extract SQL from $migration_file. Skipping gh-ost execution."
+        php artisan migrate:rollback --path="database/migrations/gh-ost/$(basename "$migration_file")" --force --no-interaction
+        continue
+    fi
+done
+
+echo "gh-ost migrations complete."
+```
+
+### Secrets
+
+```yaml
+
+# Secrets for the database connections
+DEV_DB_HOST, DEV_DB_USERNAME, DEV_DB_PASSWORD, DEV_DB_DATABASE
+STAGING_DB_HOST, STAGING_DB_USERNAME, STAGING_DB_PASSWORD, STAGING_DB_DATABASE
+PROD_DB_HOST, PROD_DB_USERNAME, PROD_DB_PASSWORD, PROD_DB_DATABASE
+```
