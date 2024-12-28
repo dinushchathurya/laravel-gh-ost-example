@@ -61,7 +61,7 @@ find database/migrations/gh-ost -maxdepth 1 -name "*.php" -print0 | while IFS= r
     fi
 
     # Extract the ALTER TABLE SQL from the comment in the migration
-    ALTER_TABLE_SQL=$(grep "//gh-ost:" "$migration_file" | sed 's/.*gh-ost: //')
+    ALTER_TABLE_SQL=$(grep -oP "// gh-ost: .+" "$migration_file" | sed 's/.*gh-ost: //')
 
     # Debugging output to verify the SQL extraction
     echo "Extracted ALTER TABLE SQL: $ALTER_TABLE_SQL"
