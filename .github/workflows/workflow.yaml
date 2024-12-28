@@ -66,3 +66,6 @@ jobs:
             DB_DATABASE: test_database
             DB_USERNAME: root
             DB_PASSWORD: root_password
+      
+      - name: Show table columns after gh-ost migration
+        run: mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "DESCRIBE users;"
