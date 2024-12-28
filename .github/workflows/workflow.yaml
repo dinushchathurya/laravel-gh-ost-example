@@ -6,8 +6,6 @@ on:
       - main
       - dev
       - stg
-    paths:
-      - 'database/migrations/**'
   pull_request:
     branches:
       - main
