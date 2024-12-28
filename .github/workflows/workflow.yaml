@@ -51,11 +51,11 @@ jobs:
           mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "SHOW VARIABLES LIKE 'binlog_format';"
           mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "SHOW GRANTS FOR 'root'@'%';"
 
-      - name: Run migrations (regular migrations)
-        run: php artisan migrate --force --no-interaction
+      # - name: Run migrations (regular migrations)
+      #   run: php artisan migrate --force --no-interaction
       
-      - name: Show table columns 
-        run: mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "DESCRIBE users;"
+      # - name: Show table columns 
+      #   run: mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "DESCRIBE users;"
 
       - name: Download gh-ost binary
         run: |
@@ -65,7 +65,9 @@ jobs:
           sudo chmod +x /usr/local/bin/gh-ost
 
       - name: Run gh-ost migrations
-        run: bash gh-ost-migrate.sh
+        run: |
+          php artisan migrate --force --no-interaction
+          bash gh-ost-migrate.sh
         env:
             DB_HOST: 127.0.0.1
             DB_PORT: 3306
@@ -74,4 +76,6 @@ jobs:
             DB_PASSWORD: root_password
       
       - name: Show table columns after gh-ost migration
-        run: mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "SHOW TABLES LIKE '_users_gho%';"
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "DESCRIBE users;"
+          mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "SHOW TABLES LIKE '_users_gho%';"
