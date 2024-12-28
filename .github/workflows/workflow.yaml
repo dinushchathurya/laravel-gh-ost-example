@@ -4,15 +4,15 @@ on:
   push:
     branches:
       - main
-      - develop
-      - staging
+      - dev
+      - stg
     paths:
       - 'database/migrations/**'
   pull_request:
     branches:
       - main
-      - develop
-      - staging
+      - dev
+      - stg
     paths:
       - 'database/migrations/**'
 
@@ -22,7 +22,7 @@ jobs:
     strategy:
       matrix:
         environment: [dev, stg, prod]
-        branch: [develop, staging, main]
+        branch: [dev, stg, prod]
     if: (github.ref == format('refs/heads/{0}', matrix.branch) || (github.event_name == 'pull_request' && contains(github.base_ref, matrix.branch))) && contains(github.event.commits.*.modified, 'database/migrations')
     services:
       mysql:
