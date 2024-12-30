@@ -75,7 +75,7 @@ jobs:
           sudo chmod +x /usr/local/bin/gh-ost
 
       - name: Run gh-ost migrations
-        run: bash gh-ost-migrate.sh
+        run: bash gh-ost-with-tracking.sh
         env:
             DB_HOST: 127.0.0.1
             DB_PORT: 3306
