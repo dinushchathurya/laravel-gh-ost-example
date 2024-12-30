@@ -17,7 +17,7 @@ if [[ -z "$DB_HOST" || -z "$DB_DATABASE" || -z "$DB_USERNAME" || -z "$DB_PASSWOR
   exit 1
 fi
 
-# Function to execute gh-ost with retry logic
+# Function to execute gh-ost with retry logic and capture output
 execute_gh_ost() {
   local TABLE_NAME="$1"
   local ALTER_SQL="$2"
@@ -45,11 +45,13 @@ execute_gh_ost() {
     fi
 
     echo "gh-ost failed for $TABLE_NAME. Retrying in $GHOST_RETRY_DELAY seconds..."
+    echo "$GHOST_OUTPUT"  # Output gh-ost output on failure
     sleep "$GHOST_RETRY_DELAY"
     RETRIES=$((RETRIES - 1))
   done
 
   echo "gh-ost failed for $TABLE_NAME after $GHOST_RETRY_COUNT retries." >&2
+  echo "$GHOST_OUTPUT"  # Output final gh-ost output on failure
   return 1
 }
 
