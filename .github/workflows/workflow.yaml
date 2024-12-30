@@ -59,7 +59,7 @@ jobs:
         run: php artisan migrate --force --no-interaction
 
       - name: Show table columns
-        run: mysql -h ${{ secrets.DB_HOST }} -P 3306 -u ${{ secrets.DB_USERNAME }} -p ${{ secrets.DB_PASSWORD }} dev -e "DESCRIBE users;"
+        run: mysql -h ${{ secrets.DB_HOST }} -P 3306 -u ${{ secrets.DB_USERNAME }} -p${{ secrets.DB_PASSWORD }} dev -e "DESCRIBE users;"
 
       - name: Download gh-ost binary
         run: |
@@ -79,4 +79,4 @@ jobs:
 
       - name: Show table columns after gh-ost migration
         run: |
-         run: mysql -h ${{ secrets.DB_HOST }} -P 3306 -u ${{ secrets.DB_USERNAME }} -p ${{ secrets.DB_PASSWORD }} dev -e "DESCRIBE users;"
+         run: mysql -h ${{ secrets.DB_HOST }} -P 3306 -u ${{ secrets.DB_USERNAME }} -p${{ secrets.DB_PASSWORD }} dev -e "DESCRIBE users;"
