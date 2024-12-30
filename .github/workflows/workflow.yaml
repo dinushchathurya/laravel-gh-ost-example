@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - dev
-      - stable-version
 
 jobs:
   deploy:
@@ -40,11 +39,11 @@ jobs:
           touch .env
           echo "APP_KEY=base64:$(php artisan key:generate --show)" >> .env
           echo "DB_CONNECTION=mysql" >> .env
-          echo "DB_HOST=${{ secrets.DB_HOST }}" >> .env
+          echo "DB_HOST=127.0.0.1" >> .env
           echo "DB_PORT=3306" >> .env
-          echo "DB_DATABASE=${{ secrets.DB_DATABASE }}" >> .env
-          echo "DB_USERNAME=${{ secrets.DB_USERNAME }}" >> .env
-          echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
+          echo "DB_DATABASE=test_database" >> .env
+          echo "DB_USERNAME=root" >> .env
+          echo "DB_PASSWORD=root_password" >> .env
 
       # - name: Check MySQL configuration
       #   run: |
@@ -56,7 +55,7 @@ jobs:
       #   run: php artisan migrate --force --no-interaction
 
       - name: Show table columns
-        run: mysql -h ${{ secrets.DB_HOST }} -P 3306 -u ${{ secrets.DB_USERNAME }} -p${{ secrets.DB_USERNAME }} ${{ secrets.DB_DATABASE }} -e "DESCRIBE users;"
+        run: mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "DESCRIBE users;"
 
       - name: Download gh-ost binary
         run: |
@@ -68,11 +67,13 @@ jobs:
       - name: Run gh-ost migrations
         run: bash gh-ost-migrate.sh
         env:
-            DB_HOST: ${{ secrets.DB_HOST }}
+            DB_HOST: 127.0.0.1
             DB_PORT: 3306
-            DB_DATABASE: ${{ secrets.DB_DATABASE }}
-            DB_USERNAME: ${{ secrets.DB_USERNAME }}
-            DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+            DB_DATABASE: test_database
+            DB_USERNAME: root
+            DB_PASSWORD: root_password
 
       - name: Show table columns after gh-ost migration
-        run: mysql -h ${{ secrets.DB_HOST }} -P 3306 -u ${{ secrets.DB_USERNAME }} -p${{ secrets.DB_USERNAME }} ${{ secrets.DB_DATABASE }} -e "DESCRIBE users;"
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "DESCRIBE users;"
+          mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "SHOW TABLES LIKE '_users_gho%';"
