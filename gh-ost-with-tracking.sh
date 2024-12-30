@@ -37,7 +37,7 @@ execute_gh_ost() {
     echo "$GHOST_OUTPUT"
 
     if [[ $? -ne 0 ]]; then
-        echo "gh-ost failed!"
+        echo "gh-ost failed! Migration $MIGRATION_FILE will not be moved."
         return 1 # Return 1 to indicate failure
     fi
 
