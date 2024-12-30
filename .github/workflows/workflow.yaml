@@ -1,14 +1,14 @@
 name: Deploy
 
 on:
-  push: # To run on push to specific branches
+  push:
     branches:
       - dev
       - stg
       - main
   pull_request:
     types:
-      closed # To run on PRs merged or closed
+      closed
     branches:
       - dev
       - stg
@@ -18,7 +18,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     if: github.event.pull_request.merged == true || github.event_name == 'push'
-    services: 
+    services:
       mysql:
         image: mysql:8.0
         env:
@@ -26,8 +26,8 @@ jobs:
           MYSQL_DATABASE: test_database
         ports:
           - 3306:3306
-        options: >- 
-          --health-cmd "mysqladmin ping" 
+        options: >-
+          --health-cmd "mysqladmin ping"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -87,4 +87,3 @@ jobs:
         run: |
           mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "DESCRIBE users;"
           mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "SHOW TABLES LIKE '_users_gho%';"
-    

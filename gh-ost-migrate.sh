@@ -7,6 +7,13 @@ DB_DATABASE="${DB_DATABASE:-test_database}"
 DB_USERNAME="${DB_USERNAME:-root}"
 DB_PASSWORD="${DB_PASSWORD:-root_password}"
 
+# Ensure database is set
+if [[ -z "$DB_DATABASE" ]]; then
+    echo "Database not specified. Exiting."
+    exit 1
+fi
+
+# Function to execute gh-ost for a table and ALTER SQL
 execute_gh_ost() {
     TABLE_NAME="$1"
     ALTER_SQL="$2"
@@ -29,16 +36,23 @@ execute_gh_ost() {
 
     if [[ $? -ne 0 ]]; then
         echo "gh-ost failed!"
-        return 1 # Return 1 to indicate failure
+        return 1
     fi
     return 0
+}
+
+# Ensure the migration table is available before checking if the migration is applied
+check_migration_applied() {
+    migration_name="$1"
+    # Check if migration exists in the gh_ost_migrations table
+    mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" -e "SELECT 1 FROM gh_ost_migrations WHERE migration='$migration_name'" | grep -q "1"
 }
 
 find database/migrations/gh-ost -maxdepth 1 -name "*.php" -print0 | while IFS= read -r -d $'\0' migration_file; do
     migration_name=$(basename "$migration_file" .php)
 
     # Check if the migration has already been applied via gh-ost
-    if [[ $(mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e "SELECT * FROM gh_ost_migrations WHERE migration='$migration_name';") ]]; then
+    if check_migration_applied "$migration_name"; then
         echo "gh-ost Migration $migration_name already applied. Skipping."
         continue
     fi
@@ -69,7 +83,7 @@ find database/migrations/gh-ost -maxdepth 1 -name "*.php" -print0 | while IFS= r
     if [[ -n "$ALTER_TABLE_SQL" ]]; then
         if execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL"; then
             # After gh-ost is successful, mark the migration as applied in the gh_ost_migrations table
-            mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e "INSERT INTO gh_ost_migrations (migration) VALUES ('$migration_name');"
+            mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" -e "INSERT INTO gh_ost_migrations (migration) VALUES ('$migration_name');"
         else
             echo "gh-ost execution failed. Rolling back migration."
             php artisan migrate:rollback --path="database/migrations/gh-ost/$(basename "$migration_file")" --force --no-interaction
