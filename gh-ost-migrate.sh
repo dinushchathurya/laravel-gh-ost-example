@@ -32,6 +32,7 @@ execute_gh_ost() {
         --password="$DB_PASSWORD" \
         --table="$TABLE_NAME" \
         --alter="$ALTER_SQL" \
+        --switch-to-rbr \
         --execute 2>&1)
 
     echo "gh-ost Output:"
