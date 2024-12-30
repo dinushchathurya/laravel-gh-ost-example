@@ -4,7 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-class AddTestToUsersTable extends Migration
+class AddFourToUsersTable extends Migration
 {
     /**
      * Run the migrations.
@@ -13,9 +13,9 @@ class AddTestToUsersTable extends Migration
      */
     public function up()
     {
-        // gh-ost: ALTER TABLE users ADD test VARCHAR(255) NULL 
+        // gh-ost: ALTER TABLE users ADD four VARCHAR(255) NULL 
         Schema::table('users', function (Blueprint $table) {
-            $table->string('test')->nullable();
+            $table->string('four')->nullable();
         });
     }
 
