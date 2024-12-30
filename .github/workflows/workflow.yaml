@@ -76,12 +76,12 @@ jobs:
 
       - name: Run gh-ost migrations
         run: bash gh-ost-with-tracking.sh
-      #   env:
-      #       DB_HOST: 127.0.0.1
-      #       DB_PORT: 3306
-      #       DB_DATABASE: test_database
-      #       DB_USERNAME: root
-      #       DB_PASSWORD: root_password
+        env:
+            DB_HOST: ${{ secrets.DB_HOST }}
+            DB_PORT: 3306
+            DB_DATABASE: ${{ secrets.DB_DATABASE }}
+            DB_USERNAME: ${{ secrets.DB_USERNAME }}
+            DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
 
       # - name: Show table columns after gh-ost migration
       #   run: |
