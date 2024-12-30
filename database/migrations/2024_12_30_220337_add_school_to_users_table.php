@@ -14,7 +14,7 @@ class AddSchoolToUsersTable extends Migration
     public function up()
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->string('school')->nullable();
+            $table->string('school')->nullable(); 
         });
     }
 
