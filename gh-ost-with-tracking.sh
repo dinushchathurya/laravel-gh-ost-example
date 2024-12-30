@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # Database credentials (using environment variables is recommended)
-DB_HOST="${DB_HOST:-127.0.0.1}"
+DB_HOST="${DB_HOST}"
 DB_PORT="${DB_PORT:-3306}"
-DB_DATABASE="${DB_DATABASE:-test_database}"
-DB_USERNAME="${DB_USERNAME:-root}"
-DB_PASSWORD="${DB_PASSWORD:-root_password}"
+DB_DATABASE="${DB_DATABASE}"
+DB_USERNAME="${DB_USERNAME}"
+DB_PASSWORD="${DB_PASSWORD}"
 
 # Ensure environment variables are set
 if [[ -z "$DB_HOST" || -z "$DB_DATABASE" || -z "$DB_USERNAME" || -z "$DB_PASSWORD" ]]; then
