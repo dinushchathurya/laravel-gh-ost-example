@@ -55,17 +55,11 @@ jobs:
           echo "DB_USERNAME=${{ secrets.DB_USERNAME }}" >> .env
           echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
 
-      # - name: Check MySQL configuration
-      #   run: |
-      #     mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "SHOW VARIABLES LIKE 'log_bin';"
-      #     mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "SHOW VARIABLES LIKE 'binlog_format';"
-      #     mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "SHOW GRANTS FOR 'root'@'%';"
-
       - name: Run migrations (regular migrations)
         run: php artisan migrate --force --no-interaction
 
-      # - name: Show table columns
-      #   run: mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "DESCRIBE users;"
+      - name: Show table columns
+        run: mysql -h ${{ secrets.DB_HOST }} -P 3306 -u ${{ secrets.DB_USERNAME }} -p ${{ secrets.DB_PASSWORD }} dev -e "DESCRIBE users;"
 
       - name: Download gh-ost binary
         run: |
@@ -83,7 +77,6 @@ jobs:
             DB_USERNAME: ${{ secrets.DB_USERNAME }}
             DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
 
-      # - name: Show table columns after gh-ost migration
-      #   run: |
-      #     mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "DESCRIBE users;"
-      #     mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "SHOW TABLES LIKE '_users_gho%';"
+      - name: Show table columns after gh-ost migration
+        run: |
+         run: mysql -h ${{ secrets.DB_HOST }} -P 3306 -u ${{ secrets.DB_USERNAME }} -p ${{ secrets.DB_PASSWORD }} dev -e "DESCRIBE users;"
