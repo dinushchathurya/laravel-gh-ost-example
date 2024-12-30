@@ -27,28 +27,28 @@ done
 echo "Running regular Laravel migrations (excluding gh-ost migrations)..."
 php artisan migrate --force --no-interaction
 
-# Step 3: Move gh-ost migrations back to the main migrations folder
+# Step 3: Move `gh-ost` migrations back to the main migrations folder
 echo "Moving gh-ost migrations back to the main migrations folder..."
 find database/migrations/gh-ost -maxdepth 1 -name "*.php" -print0 | while IFS= read -r -d $'\0' migration_file; do
     mv "$migration_file" database/migrations/
     echo "Moved $migration_file back to migrations folder."
 done
 
-# Step 4: Run gh-ost migrations (only if they haven't been applied yet)
+# Step 4: Run `gh-ost` migrations (only if they haven't been applied yet)
 echo "Running gh-ost migrations (if not applied already)..."
 
-# Loop through all migration files again, but only for gh-ost migrations
+# Loop through all migration files again, but only for `gh-ost` migrations
 find database/migrations -maxdepth 1 -name "*.php" -print0 | while IFS= read -r -d $'\0' migration_file; do
+    # Check for the `// gh-ost:` comment and extract the ALTER SQL
     ALTER_SQL=$(grep -oP "// gh-ost: .+" "$migration_file" | sed 's/.*gh-ost: //')
 
     if [[ -n "$ALTER_SQL" ]]; then
         MIGRATION_NAME=$(basename "$migration_file" .php)
 
-        # Check if this migration has already been applied
-        echo "Checking if migration $MIGRATION_NAME is applied..."
-        MIGRATION_APPLIED=$(mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e "SELECT COUNT(1) FROM migrations WHERE migration='$MIGRATION_NAME';" "$DB_DATABASE" | grep -q "1" && echo "yes" || echo "no")
+        # Check if this migration has already been applied in the migrations table
+        echo "Checking if migration $MIGRATION_NAME has been applied..."
 
-        echo "Migration $MIGRATION_NAME applied: $MIGRATION_APPLIED"
+        MIGRATION_APPLIED=$(mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e "SELECT COUNT(1) FROM migrations WHERE migration='$MIGRATION_NAME';" "$DB_DATABASE" | grep -q "1" && echo "yes" || echo "no")
 
         if [[ "$MIGRATION_APPLIED" == "yes" ]]; then
             echo "Migration $MIGRATION_NAME already applied. Skipping gh-ost migration."
