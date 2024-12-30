@@ -18,6 +18,9 @@ execute_gh_ost() {
     TABLE_NAME="$1"
     ALTER_SQL="$2"
 
+    # Trim any leading or trailing spaces from the table name
+    TABLE_NAME=$(echo "$TABLE_NAME" | xargs)
+
     echo "Executing gh-ost for table: $TABLE_NAME"
     echo "SQL: $ALTER_SQL"
 
@@ -67,6 +70,9 @@ find database/migrations/gh-ost -maxdepth 1 -name "*.php" -print0 | while IFS= r
     if [[ -z "$TABLE_NAME" ]]; then
         TABLE_NAME=$(grep -oP "(?<=Schema::create\(')[^']+" "$migration_file")
     fi
+
+    # Trim the table name to avoid any leading/trailing spaces
+    TABLE_NAME=$(echo "$TABLE_NAME" | xargs)
 
     if [[ -z "$TABLE_NAME" ]]; then
         echo "Could not extract table name from $migration_file. Skipping."
