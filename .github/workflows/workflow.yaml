@@ -87,18 +87,4 @@ jobs:
         run: |
           mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "DESCRIBE users;"
           mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "SHOW TABLES LIKE '_users_gho%';"
-      
-      - name: Run migrations (regular migrations)
-        run: php artisan migrate --force --no-interaction
-
-      - name: Show table columns
-        run: mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "DESCRIBE users;"
-      
-      - name: Run gh-ost migrations
-        run: bash gh-ost-migrate.sh
-        env:
-            DB_HOST: 127.0.0.1
-            DB_PORT: 3306
-            DB_DATABASE: test_database
-            DB_USERNAME: root
-            DB_PASSWORD: root_password
+    
