@@ -56,7 +56,7 @@ jobs:
       #   run: php artisan migrate --force --no-interaction
 
       - name: Show table columns
-        run: mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "DESCRIBE users;"
+        run: mysql -h ${{ secrets.DB_HOST }} -P 3306 -u ${{ secrets.DB_USERNAME }} -p${{ secrets.DB_USERNAME }} ${{ secrets.DB_DATABASE }} -e "DESCRIBE users;"
 
       - name: Download gh-ost binary
         run: |
@@ -75,6 +75,4 @@ jobs:
             DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
 
       - name: Show table columns after gh-ost migration
-        run: |
-          mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "DESCRIBE users;"
-          mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "SHOW TABLES LIKE '_users_gho%';"
+        run: mysql -h ${{ secrets.DB_HOST }} -P 3306 -u ${{ secrets.DB_USERNAME }} -p${{ secrets.DB_USERNAME }} ${{ secrets.DB_DATABASE }} -e "DESCRIBE users;"
