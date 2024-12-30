@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - dev
+      - stable-version
 
 jobs:
   deploy:
@@ -39,20 +40,20 @@ jobs:
           touch .env
           echo "APP_KEY=base64:$(php artisan key:generate --show)" >> .env
           echo "DB_CONNECTION=mysql" >> .env
-          echo "DB_HOST=127.0.0.1" >> .env
+          echo "DB_HOST=${{ secrets.DB_HOST }}" >> .env
           echo "DB_PORT=3306" >> .env
-          echo "DB_DATABASE=test_database" >> .env
-          echo "DB_USERNAME=root" >> .env
-          echo "DB_PASSWORD=root_password" >> .env
+          echo "DB_DATABASE=${{ secrets.DB_DATABASE }}" >> .env
+          echo "DB_USERNAME=${{ secrets.DB_USERNAME }}" >> .env
+          echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
 
-      - name: Check MySQL configuration
-        run: |
-          mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "SHOW VARIABLES LIKE 'log_bin';"
-          mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "SHOW VARIABLES LIKE 'binlog_format';"
-          mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "SHOW GRANTS FOR 'root'@'%';"
+      # - name: Check MySQL configuration
+      #   run: |
+      #     mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "SHOW VARIABLES LIKE 'log_bin';"
+      #     mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "SHOW VARIABLES LIKE 'binlog_format';"
+      #     mysql -h 127.0.0.1 -P 3306 -u root -proot_password -e "SHOW GRANTS FOR 'root'@'%';"
 
-      - name: Run migrations (regular migrations)
-        run: php artisan migrate --force --no-interaction
+      # - name: Run migrations (regular migrations)
+      #   run: php artisan migrate --force --no-interaction
 
       - name: Show table columns
         run: mysql -h 127.0.0.1 -P 3306 -u root -proot_password test_database -e "DESCRIBE users;"
@@ -67,11 +68,11 @@ jobs:
       - name: Run gh-ost migrations
         run: bash gh-ost-migrate.sh
         env:
-            DB_HOST: 127.0.0.1
+            DB_HOST: ${{ secrets.DB_HOST }}
             DB_PORT: 3306
-            DB_DATABASE: test_database
-            DB_USERNAME: root
-            DB_PASSWORD: root_password
+            DB_DATABASE: ${{ secrets.DB_DATABASE }}
+            DB_USERNAME: ${{ secrets.DB_USERNAME }}
+            DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
 
       - name: Show table columns after gh-ost migration
         run: |
