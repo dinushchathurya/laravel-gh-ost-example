@@ -4,7 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-class AddMatsToUsersTable extends Migration
+class AddTestTwoToUsersTable extends Migration
 {
     /**
      * Run the migrations.
@@ -13,9 +13,9 @@ class AddMatsToUsersTable extends Migration
      */
     public function up()
     {
-        // gh-ost: ALTER TABLE users ADD mats VARCHAR(255) NULL 
+        // gh-ost: ALTER TABLE users ADD two VARCHAR(255) NULL 
         Schema::table('users', function (Blueprint $table) {
-            $table->string('mats')->nullable();
+            $table->string('two')->nullable();
         });
     }
 
