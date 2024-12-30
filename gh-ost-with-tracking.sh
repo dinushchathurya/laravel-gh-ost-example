@@ -22,6 +22,7 @@ execute_gh_ost() {
     echo "Executing gh-ost for table: $TABLE_NAME"
     echo "SQL: $ALTER_SQL"
 
+    # Run the gh-ost migration
     GHOST_OUTPUT=$(gh-ost \
         --host="$DB_HOST" \
         --port="$DB_PORT" \
@@ -40,7 +41,7 @@ execute_gh_ost() {
         return 1 # Return 1 to indicate failure
     fi
 
-    # If successful, move the migration file to the default folder
+    # If successful, move the migration file to the main migrations folder
     mv "$MIGRATION_FILE" "database/migrations/"
     echo "Successfully moved $MIGRATION_FILE to database/migrations/"
 
@@ -58,7 +59,7 @@ find database/migrations/gh-ost -maxdepth 1 -name "*.php" -print0 | while IFS= r
     if [[ -n "$TABLE_NAME" && -n "$ALTER_TABLE_SQL" ]]; then
         echo "Running gh-ost migration: $migration_name"
         
-        # Execute the gh-ost migration
+        # Execute the gh-ost migration and only move if successful
         if execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL" "$migration_file"; then
             echo "Migration $migration_name completed successfully."
         else
