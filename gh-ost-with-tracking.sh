@@ -13,7 +13,7 @@ if [[ -z "$DB_HOST" || -z "$DB_DATABASE" || -z "$DB_USERNAME" || -z "$DB_PASSWOR
   exit 1
 fi
 
-# Step 1: Move gh-ost migrations to a temporary folder
+# Step 1: Move `gh-ost` migrations to a temporary folder
 echo "Moving gh-ost migrations to temporary folder..."
 mkdir -p database/migrations/gh-ost
 find database/migrations -maxdepth 1 -name "*.php" -print0 | while IFS= read -r -d $'\0' migration_file; do
@@ -42,9 +42,6 @@ find database/migrations -maxdepth 1 -name "*.php" -print0 | while IFS= read -r 
 
     if [[ -n "$ALTER_SQL" ]]; then
         MIGRATION_NAME=$(basename "$migration_file" .php)
-
-        # Debugging: Check if the migration is applied
-        echo "Checking if migration $MIGRATION_NAME is applied..."
 
         # Check if this migration has already been applied
         MIGRATION_APPLIED=$(mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e "SELECT COUNT(1) FROM migrations WHERE migration='$MIGRATION_NAME';" "$DB_DATABASE" | grep -q "1" && echo "yes" || echo "no")
