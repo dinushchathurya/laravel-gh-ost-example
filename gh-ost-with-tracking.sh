@@ -47,12 +47,6 @@ is_migration_applied() {
     mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e "SELECT COUNT(1) FROM migrations WHERE migration='$migration_name';" "$DB_DATABASE" | grep -q "1"
 }
 
-# Function to check if the gh-ost migration has been applied by checking table existence
-is_gh_ost_migration_applied() {
-    TABLE_NAME="$1"
-    mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e "SHOW TABLES LIKE '${TABLE_NAME}_gho%';" "$DB_DATABASE" | grep -q "${TABLE_NAME}_gho"
-}
-
 # Get a list of all migrations that have already been applied in Laravel
 applied_migrations=$(mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e "SELECT migration FROM migrations" "$DB_DATABASE" | tail -n +2)
 
@@ -75,8 +69,8 @@ find database/migrations -maxdepth 1 -name "*.php" -print0 | while IFS= read -r 
     fi
 done
 
-# Step 2: Run gh-ost migrations that have already been applied (via gh-ost)
-echo "Running previously applied gh-ost migrations"
+# Step 2: Check for gh-ost migrations that are already applied (via gh-ost)
+echo "Checking previously applied gh-ost migrations"
 
 find database/migrations -maxdepth 1 -name "*.php" -print0 | while IFS= read -r -d $'\0' migration_file; do
     migration_name=$(basename "$migration_file" .php)
@@ -94,10 +88,8 @@ find database/migrations -maxdepth 1 -name "*.php" -print0 | while IFS= read -r 
 
         if [[ -n "$TABLE_NAME" && -n "$ALTER_TABLE_SQL" ]]; then
             # Check if the migration has already been applied via gh-ost (i.e., if the table modification exists)
-            if is_gh_ost_migration_applied "$TABLE_NAME"; then
-                echo "gh-ost migration $migration_name already applied (via gh-ost). Running as normal migration."
-                # Mark the migration as applied in the migrations table (without re-running ALTER TABLE)
-                mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e "INSERT INTO migrations (migration) VALUES ('$migration_name');" "$DB_DATABASE"
+            if is_migration_applied "$migration_name"; then
+                echo "gh-ost migration $migration_name already applied. Skipping."
                 continue
             fi
         fi
@@ -125,7 +117,7 @@ find database/migrations -maxdepth 1 -name "*.php" -print0 | while IFS= read -r 
             # Run the gh-ost migration (it hasn't been applied yet)
             if execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL"; then
                 # After gh-ost is successful, mark the migration as applied in the migrations table
-                mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e "INSERT INTO migrations (migration) VALUES ('$migration_name');" "$DB_DATABASE"
+                mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" -e "INSERT INTO migrations (migration) VALUES ('$migration_name');"
             else
                 echo "gh-ost execution failed. Rolling back migration."
                 php artisan migrate:rollback --path="database/migrations/$(basename "$migration_file")" --force --no-interaction
