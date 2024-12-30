@@ -67,10 +67,7 @@ jobs:
           tar -xvf gh-ost-binary-linux-amd64-20241219160321.tar.gz
           sudo mv gh-ost /usr/local/bin/ # Move to a directory in PATH
           sudo chmod +x /usr/local/bin/gh-ost
-      
-      - name: Allow execution of gh-ost
-        run:  gh-ost-with-tracking.sh
-
+  
       - name: Run gh-ost migrations
         run: bash gh-ost-with-tracking.sh
         env:
