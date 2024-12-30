@@ -36,6 +36,7 @@ execute_gh_ost() {
       --table="$TABLE_NAME" \
       --alter="$ALTER_SQL" \
       --execute \
+      --switch-to-rbr
       --allow-on-master \
       2>&1)
 
