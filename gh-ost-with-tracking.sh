@@ -132,3 +132,4 @@ find database/migrations -maxdepth 1 -name "*.php" -print0 | while IFS= read -r 
 done
 
 echo "Migration process complete."
+
