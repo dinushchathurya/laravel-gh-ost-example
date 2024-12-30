@@ -49,11 +49,11 @@ jobs:
           touch .env
           echo "APP_KEY=base64:$(php artisan key:generate --show)" >> .env
           echo "DB_CONNECTION=mysql" >> .env
-          echo "DB_HOST=127.0.0.1" >> .env
+          echo "DB_HOST=${{ secrets.DB_HOST }}" >> .env
           echo "DB_PORT=3306" >> .env
-          echo "DB_DATABASE=test_database" >> .env
-          echo "DB_USERNAME=root" >> .env
-          echo "DB_PASSWORD=root_password" >> .env
+          echo "DB_DATABASE=${{ secrets.DB_DATABASE }}" >> .env
+          echo "DB_USERNAME=${{ secrets.DB_USERNAME }}" >> .env
+          echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
 
       # - name: Check MySQL configuration
       #   run: |
