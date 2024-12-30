@@ -37,6 +37,7 @@ done
 # Step 4: Run gh-ost migrations (only if they haven't been applied yet)
 echo "Running gh-ost migrations (if not applied already)..."
 
+# Loop through all migration files again, but only for gh-ost migrations
 find database/migrations -maxdepth 1 -name "*.php" -print0 | while IFS= read -r -d $'\0' migration_file; do
     ALTER_SQL=$(grep -oP "// gh-ost: .+" "$migration_file" | sed 's/.*gh-ost: //')
 
@@ -44,6 +45,7 @@ find database/migrations -maxdepth 1 -name "*.php" -print0 | while IFS= read -r 
         MIGRATION_NAME=$(basename "$migration_file" .php)
 
         # Check if this migration has already been applied
+        echo "Checking if migration $MIGRATION_NAME is applied..."
         MIGRATION_APPLIED=$(mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e "SELECT COUNT(1) FROM migrations WHERE migration='$MIGRATION_NAME';" "$DB_DATABASE" | grep -q "1" && echo "yes" || echo "no")
 
         echo "Migration $MIGRATION_NAME applied: $MIGRATION_APPLIED"
