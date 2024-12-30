@@ -30,6 +30,7 @@ execute_gh_ost() {
         --table="$TABLE_NAME" \
         --alter="$ALTER_SQL" \
         --execute \
+        --allow-on-master \
         --switch-to-rbr 2>&1)  # Added --switch-to-rbr to automatically switch binlog format
 
     echo "gh-ost Output:"
