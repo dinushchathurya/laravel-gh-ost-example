@@ -37,7 +37,7 @@ execute_gh_ost() {
       --alter="$ALTER_SQL" \
       --execute \
       --switch-to-rbr \
-      --allow-on-master \
+      --allow-master-master \
       2>&1)
 
     if [[ $? -eq 0 ]]; then
