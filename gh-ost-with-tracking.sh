@@ -29,7 +29,8 @@ execute_gh_ost() {
         --password="$DB_PASSWORD" \
         --table="$TABLE_NAME" \
         --alter="$ALTER_SQL" \
-        --execute 2>&1)
+        --execute \
+        --switch-to-rbr 2>&1)  # Added --switch-to-rbr to automatically switch binlog format
 
     echo "gh-ost Output:"
     echo "$GHOST_OUTPUT"
