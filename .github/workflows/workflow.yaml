@@ -80,4 +80,4 @@ jobs:
       - name: Show table columns after gh-ost migration
         run: mysql -h ${{ secrets.DB_HOST }} -P 3306 -u ${{ secrets.DB_USERNAME }} -p${{ secrets.DB_PASSWORD }} dev -e "DESCRIBE users;"
 
-        
+    
