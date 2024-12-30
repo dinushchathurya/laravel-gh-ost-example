@@ -37,6 +37,8 @@ execute_gh_ost() {
       --alter="$ALTER_SQL" \
       --execute \
       --switch-to-rbr \
+      -allow-on-master \
+      --approve-renamed-columns \
       --allow-master-master \
       2>&1)
 
