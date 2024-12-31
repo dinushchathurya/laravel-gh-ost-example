@@ -64,7 +64,6 @@ echo "Running normal migrations (without //gh-ost:)"
 find database/migrations -maxdepth 1 -name "*.php" -print0 | while IFS= read -r -d $'\0' migration_file; do
   migration_name=$(basename "$migration_file" .php)
 
-  # If migration doesn't have the //gh-ost: comment, run it as a normal migration
   if ! grep -q "// gh-ost:" "$migration_file"; then
     echo "Running regular Laravel migration: $migration_name"
     php artisan migrate --path="database/migrations/$(basename "$migration_file")" --force --no-interaction || {
@@ -80,11 +79,14 @@ echo "Running gh-ost migrations"
 find database/migrations -maxdepth 1 -name "*.php" -print0 | while IFS= read -r -d $'\0' migration_file; do
   migration_name=$(basename "$migration_file" .php)
 
-  # Check if the migration has the //gh-ost: comment
   if grep -q "// gh-ost:" "$migration_file"; then
     # Extract table name and sanitize it
-    TABLE_NAME=$(grep -oP "(?<=Schema::table\(')[^']+" "$migration_file" | tr -d '\n' | tr -d '\r')
+    TABLE_NAME=$(grep -oP "(?<=Schema::table\(')[^']+" "$migration_file" | head -n 1 | tr -d '\n' | tr -d '\r')
     ALTER_TABLE_SQL=$(grep -oP "// gh-ost: .+" "$migration_file" | sed 's/.*gh-ost: //' | tr -d '\n' | tr -d '\r')
+
+    # Debugging statements
+    echo "Debug: Extracted table name: $TABLE_NAME"
+    echo "Debug: Extracted ALTER SQL: $ALTER_TABLE_SQL"
 
     # Validate table name and SQL statement
     if [[ -z "$TABLE_NAME" ]]; then
@@ -100,7 +102,6 @@ find database/migrations -maxdepth 1 -name "*.php" -print0 | while IFS= read -r 
     echo "Running gh-ost migration for table: $TABLE_NAME with SQL: $ALTER_TABLE_SQL"
 
     if execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL"; then
-      # After gh-ost is successful, mark the migration as applied in the migrations table
       mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
         -e "INSERT INTO migrations (migration) SELECT '$migration_name' WHERE NOT EXISTS (SELECT 1 FROM migrations WHERE migration = '$migration_name');"
     else
