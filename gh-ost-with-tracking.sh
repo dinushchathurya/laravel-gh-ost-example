@@ -38,7 +38,20 @@ find database/migrations -maxdepth 1 -name "*.php" | while read -r migration_fil
   fi
 done
 
-# Function to execute gh-ost with retry logic and rollback logic
+# Function to get the next batch value
+get_next_batch() {
+  local CURRENT_BATCH
+  CURRENT_BATCH=$(mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
+    -e "SELECT MAX(batch) FROM migrations;" | tail -n 1)
+
+  if [[ -z "$CURRENT_BATCH" || "$CURRENT_BATCH" == "NULL" ]]; then
+    echo 1
+  else
+    echo $((CURRENT_BATCH + 1))
+  fi
+}
+
+# Function to execute gh-ost with retry logic
 execute_gh_ost() {
   local TABLE_NAME="$1"
   local ALTER_SQL="$2"
@@ -77,13 +90,7 @@ execute_gh_ost() {
     RETRIES=$((RETRIES - 1))
   done
 
-  echo "gh-ost failed for $TABLE_NAME after $GHOST_RETRY_COUNT retries. Executing failure SQL."
-  mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
-    -e "$FAILURE_SQL" || {
-      echo "Error: Failed to execute failure SQL: $FAILURE_SQL" >&2
-      exit 1
-    }
-
+  echo "gh-ost failed for $TABLE_NAME after $GHOST_RETRY_COUNT retries." >&2
   return 1
 }
 
@@ -111,12 +118,9 @@ find "$TEMP_FOLDER" -maxdepth 1 -name "*.php" | while read -r migration_file; do
   # Process each ALTER TABLE statement
   while IFS= read -r ALTER_TABLE_SQL; do
     if [[ -n "$ALTER_TABLE_SQL" && "$ALTER_TABLE_SQL" == *"ALTER TABLE"* ]]; then
-      # Define rollback SQL in case of failure
-      ROLLBACK_SQL="ALTER TABLE $TABLE_NAME DROP COLUMN country"
-
       echo "Executing gh-ost for SQL: $ALTER_TABLE_SQL"
-      if ! execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL" "$ROLLBACK_SQL"; then
-        echo "Error: gh-ost failed for SQL: $ALTER_TABLE_SQL. Rolling back migration." >&2
+      if ! execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL"; then
+        echo "Error: gh-ost failed for SQL: $ALTER_TABLE_SQL." >&2
         exit 1
       fi
     else
@@ -124,9 +128,16 @@ find "$TEMP_FOLDER" -maxdepth 1 -name "*.php" | while read -r migration_file; do
     fi
   done <<< "$ALTER_TABLE_STATEMENTS"
 
+  # Determine the next batch value
+  BATCH=$(get_next_batch)
+  echo "Inserting migration record with batch $BATCH for $migration_name"
+
   # Mark migration as applied
   mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
-    -e "INSERT INTO migrations (migration) VALUES ('$migration_name');"
+    -e "INSERT INTO migrations (migration, batch) VALUES ('$migration_name', $BATCH);" || {
+    echo "Error: Failed to insert migration record for $migration_name" >&2
+    exit 1
+  }
 
   # Move processed file back to the main folder
   mv "$migration_file" database/migrations/
