@@ -10,10 +10,6 @@ DB_PASSWORD="${DB_PASSWORD}"
 # Temp folder for gh-ost migrations
 TEMP_FOLDER="temp_gh_ost_migrations"
 
-# gh-ost related settings
-GHOST_RETRY_COUNT="${GHOST_RETRY_COUNT:-3}"
-GHOST_RETRY_DELAY="${GHOST_RETRY_DELAY:-5}"
-
 # Ensure environment variables are set
 if [[ -z "$DB_HOST" || -z "$DB_DATABASE" || -z "$DB_USERNAME" || -z "$DB_PASSWORD" ]]; then
   echo "Error: Missing database credentials. Please set DB_HOST, DB_DATABASE, DB_USERNAME, and DB_PASSWORD." >&2
@@ -51,6 +47,26 @@ extract_sql() {
   local file="$1"
   local pattern="$2"
   grep -oP "$pattern" "$file" | sed 's/.*gh-ost: //'
+}
+
+# Function to validate migration file
+validate_gh_ost_migration() {
+  local file="$1"
+  local alter_sql=$(extract_sql "$file" "// gh-ost: ALTER TABLE .* ADD COLUMN .*")
+  local rollback_sql=$(extract_sql "$file" "// gh-ost: ALTER TABLE .* DROP COLUMN .*")
+
+  if [[ -z "$alter_sql" ]]; then
+    echo "Error: Missing or invalid ADD COLUMN SQL in migration file: $file" >&2
+    return 1
+  fi
+
+  if [[ -z "$rollback_sql" ]]; then
+    echo "Error: Missing or invalid DROP COLUMN SQL in migration file: $file" >&2
+    return 1
+  fi
+
+  echo "Validation passed for migration file: $file"
+  return 0
 }
 
 # Function to execute gh-ost
@@ -100,8 +116,13 @@ find database/migrations -maxdepth 1 -name "*.php" | while read -r migration_fil
   migration_name=$(basename "$migration_file" .php)
 
   if grep -q "// gh-ost:" "$migration_file" && [[ $(is_migration_applied "$migration_name") -eq 0 ]]; then
-    echo "Moving unapplied gh-ost migration $migration_name to temp folder."
-    mv "$migration_file" "$TEMP_FOLDER/"
+    echo "Validating migration file: $migration_file"
+    if validate_gh_ost_migration "$migration_file"; then
+      echo "Moving unapplied gh-ost migration $migration_name to temp folder."
+      mv "$migration_file" "$TEMP_FOLDER/"
+    else
+      echo "Skipping invalid gh-ost migration: $migration_name"
+    fi
   fi
 done
 
@@ -133,11 +154,7 @@ find "$TEMP_FOLDER" -maxdepth 1 -name "*.php" | while read -r migration_file; do
   alter_sql=$(extract_sql "$migration_file" "// gh-ost: ALTER TABLE .* ADD COLUMN .*")
   rollback_sql=$(extract_sql "$migration_file" "// gh-ost: ALTER TABLE .* DROP COLUMN .*")
 
-  if [[ -n "$alter_sql" ]]; then
-    execute_gh_ost "$table_name" "$alter_sql" "$rollback_sql" "$migration_name"
-  else
-    echo "Warning: Skipping migration due to missing or invalid ALTER SQL: $migration_name"
-  fi
+  execute_gh_ost "$table_name" "$alter_sql" "$rollback_sql" "$migration_name"
 
   # Move processed file back to the main folder
   mv "$migration_file" database/migrations/
