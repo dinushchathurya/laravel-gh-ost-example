@@ -26,11 +26,11 @@ execute_gh_ost() {
   echo "Executing gh-ost for table: $TABLE_NAME"
   echo "SQL: $ALTER_SQL"
 
-  # Ensure no leftover ghost table exists
-  echo "Dropping existing ghost table (if any): _${TABLE_NAME}_gho"
+  # Ensure no leftover ghost or old table exists
+  echo "Dropping existing ghost or old tables (if any): _${TABLE_NAME}_gho and _${TABLE_NAME}_del"
   mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
-    -e "DROP TABLE IF EXISTS \`_${TABLE_NAME}_gho\`;" || {
-      echo "Error: Failed to drop existing ghost table." >&2
+    -e "DROP TABLE IF EXISTS \`_${TABLE_NAME}_gho\`, \`_${TABLE_NAME}_del\`;" || {
+      echo "Error: Failed to drop existing ghost or old tables." >&2
       return 1
     }
 
@@ -49,6 +49,7 @@ execute_gh_ost() {
       --approve-renamed-columns \
       --allow-master-master \
       --initially-drop-ghost-table \
+      --initially-drop-old-table \
       2>&1)
 
     if [[ $? -eq 0 ]]; then
@@ -104,21 +105,4 @@ find database/migrations -maxdepth 1 -name "*.php" -print0 | while IFS= read -r 
 
     # Process each ALTER TABLE statement individually
     while IFS= read -r ALTER_TABLE_SQL; do
-      if [[ "$ALTER_TABLE_SQL" == *"ALTER TABLE"* ]]; then
-        echo "Executing gh-ost for SQL: $ALTER_TABLE_SQL"
-        if ! execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL"; then
-          echo "Error: gh-ost failed for SQL: $ALTER_TABLE_SQL" >&2
-          exit 1
-        fi
-      else
-        echo "Warning: Skipping invalid SQL: $ALTER_TABLE_SQL"
-      fi
-    done <<< "$ALTER_TABLE_STATEMENTS"
-
-    # Mark migration as applied in the migrations table
-    mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
-      -e "INSERT INTO migrations (migration) SELECT '$migration_name' WHERE NOT EXISTS (SELECT 1 FROM migrations WHERE migration = '$migration_name');"
-  fi
-done
-
-echo "Migration process complete."
+      if [[ -n 
