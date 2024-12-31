@@ -49,11 +49,16 @@ extract_sql() {
   grep -oP "$pattern" "$file" | sed 's/.*gh-ost: //'
 }
 
-# Function to validate migration file
+# Function to validate gh-ost migration
 validate_gh_ost_migration() {
   local file="$1"
+  echo "Validating file: $file"
+
   local alter_sql=$(extract_sql "$file" "// gh-ost: ALTER TABLE .* ADD COLUMN .*")
   local rollback_sql=$(extract_sql "$file" "// gh-ost: ALTER TABLE .* DROP COLUMN .*")
+
+  echo "  Debug: Extracted ADD COLUMN SQL: $alter_sql"
+  echo "  Debug: Extracted DROP COLUMN SQL: $rollback_sql"
 
   if [[ -z "$alter_sql" ]]; then
     echo "Error: Missing or invalid ADD COLUMN SQL in migration file: $file" >&2
