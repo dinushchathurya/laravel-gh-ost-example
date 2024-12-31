@@ -18,22 +18,11 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     if: github.event.pull_request.merged == true || github.event_name == 'push'
-    # services:
-    #   mysql:
-    #     image: mysql:8.0
-    #     env:
-    #       MYSQL_ROOT_PASSWORD: root_password
-    #       MYSQL_DATABASE: test_database
-    #     ports:
-    #       - 3306:3306
-    #     options: >-
-    #       --health-cmd "mysqladmin ping"
-    #       --health-interval 10s
-    #       --health-timeout 5s
-    #       --health-retries 5
 
     steps:
-      - uses: actions/checkout@v3
+      
+      - name: Checkout code
+        uses: actions/checkout@v3
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
@@ -54,12 +43,6 @@ jobs:
           echo "DB_DATABASE=${{ secrets.DB_DATABASE }}" >> .env
           echo "DB_USERNAME=${{ secrets.DB_USERNAME }}" >> .env
           echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
-
-      # - name: Run migrations (regular migrations)
-      #   run: php artisan migrate --force --no-interaction
-
-      # - name: Show table columns
-      #   run: mysql -h ${{ secrets.DB_HOST }} -P 3306 -u ${{ secrets.DB_USERNAME }} -p${{ secrets.DB_PASSWORD }} dev -e "DESCRIBE users;"
 
       - name: Download gh-ost binary
         run: |
