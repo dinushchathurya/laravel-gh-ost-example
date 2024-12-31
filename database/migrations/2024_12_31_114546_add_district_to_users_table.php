@@ -4,7 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-class AddSchoolToUsersTable extends Migration
+class AddDistrictToUsersTable extends Migration
 {
     /**
      * Run the migrations.
@@ -13,10 +13,10 @@ class AddSchoolToUsersTable extends Migration
      */
     public function up()
     {   
-        // gh-ost: ALTER TABLE users ADD school VARCHAR(255) NULL AFTER email;
-        // gh-ost: ALTER TABLE users DROP COLUMN school; 
+        // gh-ost: ALTER TABLE users ADD district VARCHAR(255) NULL AFTER email;
+        // gh-ost: ALTER TABLE users DROP COLUMN district; 
         Schema::table('users', function (Blueprint $table) {
-            $table->string('school')->nullable()->after('email');
+            $table->string('district')->nullable()->after('email');
         });
     }
 
@@ -28,7 +28,7 @@ class AddSchoolToUsersTable extends Migration
     public function down()
     {   
         Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn('school');
+            $table->dropColumn('district');
         });
     }
 }
