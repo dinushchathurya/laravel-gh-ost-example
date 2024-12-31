@@ -25,9 +25,10 @@ class AddSexToUsersTable extends Migration
      * @return void
      */
     public function down()
-    {
+    {   
+        // gh-ost: ALTER TABLE users DROP COLUMN sex
         Schema::table('users', function (Blueprint $table) {
-            
+            $table->dropColumn('sex');
         });
     }
 }

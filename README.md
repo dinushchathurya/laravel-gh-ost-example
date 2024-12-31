@@ -175,3 +175,25 @@ DEV_DB_HOST, DEV_DB_USERNAME, DEV_DB_PASSWORD, DEV_DB_DATABASE
 STAGING_DB_HOST, STAGING_DB_USERNAME, STAGING_DB_PASSWORD, STAGING_DB_DATABASE
 PROD_DB_HOST, PROD_DB_USERNAME, PROD_DB_PASSWORD, PROD_DB_DATABASE
 ```
+
+
+public function up()
+    {
+        // gh-ost: ALTER TABLE users ADD city VARCHAR(255) NULL 
+        Schema::table('users', function (Blueprint $table) {
+            $table->string('city')->nullable();
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     *
+     * @return void
+     */
+    public function down()
+    {   
+        // gh-ost: ALTER TABLE users DROP COLUMN city
+        Schema::table('users', function (Blueprint $table) {
+            $table->dropColumn('city');
+        });
+    }
