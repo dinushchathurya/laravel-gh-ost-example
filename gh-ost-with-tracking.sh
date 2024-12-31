@@ -50,7 +50,15 @@ record_migration() {
 extract_sql() {
   local file="$1"
   local pattern="$2"
-  grep -oP "$pattern" "$file" | sed 's/.*gh-ost: //'
+  local sql=$(grep -oP "$pattern" "$file" | sed 's/.*gh-ost: //')
+
+  if [[ -z "$sql" ]]; then
+    echo "Debug: No SQL extracted from $file with pattern $pattern" >&2
+  else
+    echo "Debug: SQL extracted: $sql"
+  fi
+
+  echo "$sql"
 }
 
 # Function to execute gh-ost
@@ -105,24 +113,7 @@ find database/migrations -maxdepth 1 -name "*.php" | while read -r migration_fil
   fi
 done
 
-# Step 1: Run normal migrations
-echo "Running normal migrations"
-find database/migrations -maxdepth 1 -name "*.php" | while read -r migration_file; do
-  migration_name=$(basename "$migration_file" .php)
-
-  if [[ $(is_migration_applied "$migration_name") -eq 0 ]]; then
-    echo "Running normal migration: $migration_name"
-    php artisan migrate --path="database/migrations/$(basename "$migration_file")" --force --no-interaction || {
-      echo "Error: Failed to run normal migration: $migration_name" >&2
-      exit 1
-    }
-    record_migration "$migration_name"
-  else
-    echo "Skipping already applied migration: $migration_name"
-  fi
-done
-
-# Step 2: Process gh-ost migrations
+# Process gh-ost migrations
 echo "Processing unapplied gh-ost migrations from temp folder"
 find "$TEMP_FOLDER" -maxdepth 1 -name "*.php" | while read -r migration_file; do
   migration_name=$(basename "$migration_file" .php)
@@ -134,7 +125,6 @@ find "$TEMP_FOLDER" -maxdepth 1 -name "*.php" | while read -r migration_file; do
   rollback_sql=$(extract_sql "$migration_file" "// gh-ost: ALTER TABLE .* DROP COLUMN .*")
 
   if [[ -n "$alter_sql" ]]; then
-    echo "ALTER SQL extracted: $alter_sql"
     execute_gh_ost "$table_name" "$alter_sql" "$rollback_sql" "$migration_name"
   else
     echo "Warning: Skipping migration due to missing or invalid ALTER SQL: $migration_name"
