@@ -13,7 +13,7 @@ class AddTestoneToUsersTable extends Migration
      */
     public function up()
     {   
-        // gh-ost: ALTER TABLE users ADD testone VARCHAR(255) NULL AFTER email;
+        // gh-ost: ALTER TABLE users ADD COLUMN testone VARCHAR(255) NULL AFTER email;
         // gh-ost: ALTER TABLE users DROP COLUMN testone; 
         Schema::table('users', function (Blueprint $table) {
             $table->string('testone')->nullable()->after('email');
