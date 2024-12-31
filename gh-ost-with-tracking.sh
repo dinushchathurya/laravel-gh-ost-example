@@ -90,7 +90,13 @@ execute_gh_ost() {
     RETRIES=$((RETRIES - 1))
   done
 
-  echo "gh-ost failed for $TABLE_NAME after $GHOST_RETRY_COUNT retries." >&2
+  echo "gh-ost failed for $TABLE_NAME after $GHOST_RETRY_COUNT retries. Executing failure SQL."
+  mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
+    -e "$FAILURE_SQL" || {
+      echo "Error: Failed to execute failure SQL: $FAILURE_SQL" >&2
+      exit 1
+    }
+
   return 1
 }
 
@@ -118,9 +124,12 @@ find "$TEMP_FOLDER" -maxdepth 1 -name "*.php" | while read -r migration_file; do
   # Process each ALTER TABLE statement
   while IFS= read -r ALTER_TABLE_SQL; do
     if [[ -n "$ALTER_TABLE_SQL" && "$ALTER_TABLE_SQL" == *"ALTER TABLE"* ]]; then
+      # Define rollback SQL in case of failure
+      ROLLBACK_SQL="ALTER TABLE $TABLE_NAME DROP COLUMN country"
+
       echo "Executing gh-ost for SQL: $ALTER_TABLE_SQL"
-      if ! execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL"; then
-        echo "Error: gh-ost failed for SQL: $ALTER_TABLE_SQL." >&2
+      if ! execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL" "$ROLLBACK_SQL"; then
+        echo "Error: gh-ost failed for SQL: $ALTER_TABLE_SQL. Rolling back migration." >&2
         exit 1
       fi
     else
