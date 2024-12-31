@@ -26,6 +26,14 @@ execute_gh_ost() {
   echo "Executing gh-ost for table: $TABLE_NAME"
   echo "SQL: $ALTER_SQL"
 
+  # Ensure no leftover ghost table exists
+  echo "Dropping existing ghost table (if any): _${TABLE_NAME}_gho"
+  mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
+    -e "DROP TABLE IF EXISTS \`_${TABLE_NAME}_gho\`;" || {
+      echo "Error: Failed to drop existing ghost table." >&2
+      return 1
+    }
+
   while [[ $RETRIES -gt 0 ]]; do
     GHOST_OUTPUT=$(gh-ost \
       --host="$DB_HOST" \
@@ -83,35 +91,36 @@ find database/migrations -maxdepth 1 -name "*.php" -print0 | while IFS= read -r 
   if grep -q "// gh-ost:" "$migration_file"; then
     # Extract table name and sanitize it
     TABLE_NAME=$(grep -oP "(?<=Schema::table\(')[^']+" "$migration_file" | head -n 1 | tr -d '\n' | tr -d '\r')
-    ALTER_TABLE_SQL=$(grep -oP "// gh-ost: .+" "$migration_file" | sed 's/.*gh-ost: //' | tr -d '\n' | tr -d '\r')
 
-    # Debugging statements
-    echo "Debug: Extracted table name: $TABLE_NAME"
-    echo "Debug: Extracted ALTER SQL: $ALTER_TABLE_SQL"
-
-    # Validate table name and SQL statement
     if [[ -z "$TABLE_NAME" ]]; then
       echo "Error: Table name could not be extracted from migration file: $migration_file" >&2
       exit 1
     fi
 
-    if [[ -z "$ALTER_TABLE_SQL" ]]; then
-      echo "Error: ALTER SQL statement could not be extracted from migration file: $migration_file" >&2
-      exit 1
-    fi
+    echo "Running gh-ost migrations for table: $TABLE_NAME"
 
-    echo "Running gh-ost migration for table: $TABLE_NAME with SQL: $ALTER_TABLE_SQL"
+    # Extract all ALTER TABLE statements
+    ALTER_TABLE_STATEMENTS=$(grep -oP "// gh-ost: .+" "$migration_file" | sed 's/.*gh-ost: //' | tr -d '\n' | tr -d '\r')
 
-    if execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL"; then
-      mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
-        -e "INSERT INTO migrations (migration) SELECT '$migration_name' WHERE NOT EXISTS (SELECT 1 FROM migrations WHERE migration = '$migration_name');"
-    else
-      echo "gh-ost execution failed. Rolling back migration."
-      php artisan migrate:rollback --path="database/migrations/$(basename "$migration_file")" --force --no-interaction || {
-        echo "Error: Failed to rollback migration." >&2
-        exit 1
-      }
-    fi
+    # Split statements by delimiter and process each one
+    IFS=';' read -r -a ALTER_TABLE_ARRAY <<< "$ALTER_TABLE_STATEMENTS"
+
+    for ALTER_TABLE_SQL in "${ALTER_TABLE_ARRAY[@]}"; do
+      # Ensure valid SQL statement
+      if [[ "$ALTER_TABLE_SQL" == *"ALTER TABLE"* ]]; then
+        echo "Executing gh-ost for SQL: $ALTER_TABLE_SQL"
+        if ! execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL"; then
+          echo "Error: gh-ost failed for SQL: $ALTER_TABLE_SQL" >&2
+          exit 1
+        fi
+      else
+        echo "Warning: Skipping invalid SQL: $ALTER_TABLE_SQL"
+      fi
+    done
+
+    # Mark migration as applied in the migrations table
+    mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
+      -e "INSERT INTO migrations (migration) SELECT '$migration_name' WHERE NOT EXISTS (SELECT 1 FROM migrations WHERE migration = '$migration_name');"
   fi
 done
 
