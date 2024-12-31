@@ -82,26 +82,33 @@ find database/migrations -maxdepth 1 -name "*.php" -print0 | while IFS= read -r 
 
   # Check if the migration has the //gh-ost: comment
   if grep -q "// gh-ost:" "$migration_file"; then
-    TABLE_NAME=$(grep -oP "(?<=Schema::table\(')[^']+" "$migration_file" | tr -d '\n')
-    ALTER_TABLE_SQL=$(grep -oP "// gh-ost: .+" "$migration_file" | sed 's/.*gh-ost: //' | tr -d '\n')
+    # Extract table name and sanitize it
+    TABLE_NAME=$(grep -oP "(?<=Schema::table\(')[^']+" "$migration_file" | tr -d '\n' | tr -d '\r')
+    ALTER_TABLE_SQL=$(grep -oP "// gh-ost: .+" "$migration_file" | sed 's/.*gh-ost: //' | tr -d '\n' | tr -d '\r')
 
-    if [[ -n "$TABLE_NAME" && -n "$ALTER_TABLE_SQL" ]]; then
-      echo "Running gh-ost migration for table: $TABLE_NAME with SQL: $ALTER_TABLE_SQL"
-
-      if execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL"; then
-        # After gh-ost is successful, mark the migration as applied in the migrations table
-        mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
-          -e "INSERT INTO migrations (migration) SELECT '$migration_name' WHERE NOT EXISTS (SELECT 1 FROM migrations WHERE migration = '$migration_name');"
-      else
-        echo "gh-ost execution failed. Rolling back migration."
-        php artisan migrate:rollback --path="database/migrations/$(basename "$migration_file")" --force --no-interaction || {
-          echo "Error: Failed to rollback migration." >&2
-          exit 1
-        }
-      fi
-    else
-      echo "Error: Could not parse table name or ALTER SQL for $migration_file." >&2
+    # Validate table name and SQL statement
+    if [[ -z "$TABLE_NAME" ]]; then
+      echo "Error: Table name could not be extracted from migration file: $migration_file" >&2
       exit 1
+    fi
+
+    if [[ -z "$ALTER_TABLE_SQL" ]]; then
+      echo "Error: ALTER SQL statement could not be extracted from migration file: $migration_file" >&2
+      exit 1
+    fi
+
+    echo "Running gh-ost migration for table: $TABLE_NAME with SQL: $ALTER_TABLE_SQL"
+
+    if execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL"; then
+      # After gh-ost is successful, mark the migration as applied in the migrations table
+      mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
+        -e "INSERT INTO migrations (migration) SELECT '$migration_name' WHERE NOT EXISTS (SELECT 1 FROM migrations WHERE migration = '$migration_name');"
+    else
+      echo "gh-ost execution failed. Rolling back migration."
+      php artisan migrate:rollback --path="database/migrations/$(basename "$migration_file")" --force --no-interaction || {
+        echo "Error: Failed to rollback migration." >&2
+        exit 1
+      }
     fi
   fi
 done
