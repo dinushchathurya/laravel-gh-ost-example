@@ -23,9 +23,20 @@ fi
 # Create temp folder for gh-ost migrations
 mkdir -p "$TEMP_FOLDER"
 
-# Move gh-ost migrations to temp folder
-echo "Moving gh-ost migrations to temp folder: $TEMP_FOLDER"
-find database/migrations -maxdepth 1 -name "*.php" -exec grep -l "// gh-ost:" {} \; -exec mv {} "$TEMP_FOLDER/" \;
+# Move only unapplied gh-ost migrations to temp folder
+echo "Identifying unapplied gh-ost migrations for processing"
+find database/migrations -maxdepth 1 -name "*.php" | while read -r migration_file; do
+  migration_name=$(basename "$migration_file" .php)
+
+  # Check if migration is already applied
+  is_migrated=$(mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
+    -e "SELECT COUNT(*) FROM migrations WHERE migration = '$migration_name';" | tail -n 1)
+
+  if grep -q "// gh-ost:" "$migration_file" && [[ "$is_migrated" -eq 0 ]]; then
+    echo "Moving unapplied migration $migration_name to temp folder for gh-ost processing."
+    mv "$migration_file" "$TEMP_FOLDER/"
+  fi
+done
 
 # Function to execute gh-ost with retry logic and capture output
 execute_gh_ost() {
@@ -35,14 +46,6 @@ execute_gh_ost() {
 
   echo "Executing gh-ost for table: $TABLE_NAME"
   echo "SQL: $ALTER_SQL"
-
-  # Ensure no leftover ghost or old table exists
-  echo "Dropping existing ghost or old tables (if any): _${TABLE_NAME}_gho and _${TABLE_NAME}_del"
-  mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
-    -e "DROP TABLE IF EXISTS \`_${TABLE_NAME}_gho\`, \`_${TABLE_NAME}_del\`;" || {
-      echo "Error: Failed to drop existing ghost or old tables." >&2
-      return 1
-    }
 
   while [[ $RETRIES -gt 0 ]]; do
     GHOST_OUTPUT=$(gh-ost \
@@ -68,20 +71,18 @@ execute_gh_ost() {
     fi
 
     echo "gh-ost failed for $TABLE_NAME. Retrying in $GHOST_RETRY_DELAY seconds..."
-    echo "$GHOST_OUTPUT"  # Output gh-ost output on failure
+    echo "$GHOST_OUTPUT"
     sleep "$GHOST_RETRY_DELAY"
     RETRIES=$((RETRIES - 1))
   done
 
   echo "gh-ost failed for $TABLE_NAME after $GHOST_RETRY_COUNT retries." >&2
-  echo "$GHOST_OUTPUT"  # Output final gh-ost output on failure
   return 1
 }
 
-# Step 1: Run normal migrations first
-echo "Running normal migrations (without // gh-ost: comments)"
-
-find database/migrations -maxdepth 1 -name "*.php" -print0 | while IFS= read -r -d $'\0' migration_file; do
+# Step 1: Run normal migrations (including those with gh-ost already applied)
+echo "Running normal migrations"
+find database/migrations -maxdepth 1 -name "*.php" | while read -r migration_file; do
   migration_name=$(basename "$migration_file" .php)
   echo "Running normal migration: $migration_name"
   php artisan migrate --path="database/migrations/$(basename "$migration_file")" --force --no-interaction || {
@@ -90,56 +91,39 @@ find database/migrations -maxdepth 1 -name "*.php" -print0 | while IFS= read -r 
   }
 done
 
-# Step 2: Process gh-ost migrations from temp folder
-echo "Processing gh-ost migrations from temp folder"
+# Step 2: Process unapplied gh-ost migrations
+echo "Processing unapplied gh-ost migrations from temp folder"
+find "$TEMP_FOLDER" -maxdepth 1 -name "*.php" | while read -r migration_file; do
+  migration_name=$(basename "$migration_file" .php)
 
-while true; do
-  remaining_files=$(find "$TEMP_FOLDER" -maxdepth 1 -name "*.php" | wc -l)
-  if [[ "$remaining_files" -eq 0 ]]; then
-    echo "All gh-ost migrations processed."
-    break
-  fi
+  echo "Running gh-ost migration for $migration_name"
 
-  find "$TEMP_FOLDER" -maxdepth 1 -name "*.php" -print0 | while IFS= read -r -d $'\0' migration_file; do
-    migration_name=$(basename "$migration_file" .php)
+  TABLE_NAME=$(grep -oP "(?<=Schema::table\(')[^']+" "$migration_file" | head -n 1 | tr -d '\n' | tr -d '\r')
+  ALTER_TABLE_STATEMENTS=$(grep -oP "// gh-ost: .+" "$migration_file" | sed 's/.*gh-ost: //' | tr ';' '\n' | tr -d '\r')
 
-    # Check if migration is already applied
-    is_migrated=$(mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
-      -e "SELECT COUNT(*) FROM migrations WHERE migration = '$migration_name';" | tail -n 1)
-
-    if [[ "$is_migrated" -eq 1 ]]; then
-      echo "Migration $migration_name already applied. Running as normal migration for record-keeping."
-      php artisan migrate --path="$TEMP_FOLDER/$(basename "$migration_file")" --force --no-interaction || {
-        echo "Error: Failed to run normal migration for $migration_name" >&2
+  # Process each ALTER TABLE statement
+  while IFS= read -r ALTER_TABLE_SQL; do
+    if [[ -n "$ALTER_TABLE_SQL" && "$ALTER_TABLE_SQL" == *"ALTER TABLE"* ]]; then
+      echo "Executing gh-ost for SQL: $ALTER_TABLE_SQL"
+      if ! execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL"; then
+        echo "Error: gh-ost failed for SQL: $ALTER_TABLE_SQL. Rolling back migration." >&2
+        php artisan migrate:rollback --path="$TEMP_FOLDER/$(basename "$migration_file")" --force --no-interaction || {
+          echo "Error: Failed to rollback migration: $migration_name" >&2
+          exit 1
+        }
         exit 1
-      }
+      fi
     else
-      echo "Running gh-ost migration for $migration_name"
-
-      TABLE_NAME=$(grep -oP "(?<=Schema::table\(')[^']+" "$migration_file" | head -n 1 | tr -d '\n' | tr -d '\r')
-      ALTER_TABLE_STATEMENTS=$(grep -oP "// gh-ost: .+" "$migration_file" | sed 's/.*gh-ost: //' | tr ';' '\n' | tr -d '\r')
-
-      # Process each ALTER TABLE statement
-      while IFS= read -r ALTER_TABLE_SQL; do
-        if [[ -n "$ALTER_TABLE_SQL" && "$ALTER_TABLE_SQL" == *"ALTER TABLE"* ]]; then
-          echo "Executing gh-ost for SQL: $ALTER_TABLE_SQL"
-          if ! execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL"; then
-            echo "Error: gh-ost failed for SQL: $ALTER_TABLE_SQL" >&2
-            exit 1
-          fi
-        else
-          echo "Warning: Skipping invalid or empty SQL: $ALTER_TABLE_SQL"
-        fi
-      done <<< "$ALTER_TABLE_STATEMENTS"
-
-      # Mark migration as applied
-      mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
-        -e "INSERT INTO migrations (migration) VALUES ('$migration_name');"
+      echo "Warning: Skipping invalid or empty SQL: $ALTER_TABLE_SQL"
     fi
+  done <<< "$ALTER_TABLE_STATEMENTS"
 
-    # Move processed file back to the main folder
-    mv "$migration_file" database/migrations/
-  done
+  # Mark migration as applied
+  mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
+    -e "INSERT INTO migrations (migration) VALUES ('$migration_name');"
+
+  # Move processed file back to the main folder
+  mv "$migration_file" database/migrations/
 done
 
 echo "Migration process complete."
