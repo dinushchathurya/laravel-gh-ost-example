@@ -108,7 +108,7 @@ while true; do
       -e "SELECT COUNT(*) FROM migrations WHERE migration = '$migration_name';" | tail -n 1)
 
     if [[ "$is_migrated" -eq 1 ]]; then
-      echo "Migration $migration_name already applied. Running as normal migration."
+      echo "Migration $migration_name already applied. Running as normal migration for record-keeping."
       php artisan migrate --path="$TEMP_FOLDER/$(basename "$migration_file")" --force --no-interaction || {
         echo "Error: Failed to run normal migration for $migration_name" >&2
         exit 1
