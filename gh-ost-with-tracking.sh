@@ -51,12 +51,21 @@ get_next_batch() {
   fi
 }
 
-# Function to execute gh-ost with retry logic
+# Function to extract rollback SQL dynamically
+get_rollback_sql() {
+  local ALTER_SQL="$1"
+  echo "$ALTER_SQL" | sed 's/ADD COLUMN/DROP COLUMN/g'
+}
+
+# Function to execute gh-ost with retry logic and rollback logic
 execute_gh_ost() {
   local TABLE_NAME="$1"
   local ALTER_SQL="$2"
-  local FAILURE_SQL="$3"
   local RETRIES="$GHOST_RETRY_COUNT"
+
+  # Generate dynamic rollback SQL
+  local ROLLBACK_SQL
+  ROLLBACK_SQL=$(get_rollback_sql "$ALTER_SQL")
 
   echo "Executing gh-ost for table: $TABLE_NAME"
   echo "SQL: $ALTER_SQL"
@@ -92,8 +101,8 @@ execute_gh_ost() {
 
   echo "gh-ost failed for $TABLE_NAME after $GHOST_RETRY_COUNT retries. Executing failure SQL."
   mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
-    -e "$FAILURE_SQL" || {
-      echo "Error: Failed to execute failure SQL: $FAILURE_SQL" >&2
+    -e "$ROLLBACK_SQL" || {
+      echo "Error: Failed to execute failure SQL: $ROLLBACK_SQL" >&2
       exit 1
     }
 
@@ -124,12 +133,9 @@ find "$TEMP_FOLDER" -maxdepth 1 -name "*.php" | while read -r migration_file; do
   # Process each ALTER TABLE statement
   while IFS= read -r ALTER_TABLE_SQL; do
     if [[ -n "$ALTER_TABLE_SQL" && "$ALTER_TABLE_SQL" == *"ALTER TABLE"* ]]; then
-      # Define rollback SQL in case of failure
-      ROLLBACK_SQL="ALTER TABLE $TABLE_NAME DROP COLUMN country"
-
       echo "Executing gh-ost for SQL: $ALTER_TABLE_SQL"
-      if ! execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL" "$ROLLBACK_SQL"; then
-        echo "Error: gh-ost failed for SQL: $ALTER_TABLE_SQL. Rolling back migration." >&2
+      if ! execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL"; then
+        echo "Error: gh-ost failed for SQL: $ALTER_TABLE_SQL. Executed rollback SQL dynamically." >&2
         exit 1
       fi
     else
