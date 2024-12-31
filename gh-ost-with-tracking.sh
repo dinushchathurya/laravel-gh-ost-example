@@ -49,12 +49,13 @@ extract_sql() {
   grep -oE "$pattern" "$file" | sed 's/.*gh-ost: //; s/[\r\n]+//g; s/^[[:space:]]*//; s/[[:space:]]*$//'
 }
 
-# Function to execute gh-ost (Improved - Handles Rollback Correctly)
+# Function to execute gh-ost (Improved - Precise Rollback Logic)
 execute_gh_ost() {
   local table_name="$1"
   local alter_sql="$2"
   local rollback_sql="$3"
   local migration_name="$4"
+  local rollback_needed=0 # Flag to track if rollback is necessary
 
   echo "Executing gh-ost for table: $table_name with SQL: $alter_sql"
 
@@ -80,16 +81,28 @@ execute_gh_ost() {
     return 0 # Success
   else
     echo "Error: gh-ost failed for $table_name with error: $GHOST_OUTPUT"
-    # ONLY attempt rollback if ALTER was successful.
-    if [[ ! "$GHOST_OUTPUT" == *"Can't DROP"* ]]; then # Corrected conditional
-        echo "Attempting rollback using SQL: $rollback_sql"
-        mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
-          -e "$rollback_sql" || {
-          echo "Error: Failed to execute rollback SQL for $table_name: $rollback_sql" >&2
-        }
+
+    # Check for specific gh-ost failure conditions that indicate a rollback is needed.
+    if [[ "$GHOST_OUTPUT" == *"Error 1062 (23000): Duplicate entry"* ]]; then
+        echo "Duplicate entry error. Rollback is likely not needed."
+    elif [[ "$GHOST_OUTPUT" == *"Can't DROP"* ]]; then
+        echo "Can't DROP error. Rollback is not needed."
+    elif [[ "$GHOST_OUTPUT" == *"Table '.*' already exists"* ]]; then
+        echo "Table already exists error. Rollback is likely not needed."
+    elif [[ "$GHOST_OUTPUT" == *"Operation CREATE USER failed"* ]]; then
+        echo "Operation CREATE USER failed. Rollback is not needed."
     else
-        echo "Skipping rollback because the column was never created."
+        rollback_needed=1 # Set the flag if it's a different error
     fi
+
+    if [[ $rollback_needed -eq 1 ]]; then
+      echo "Attempting rollback using SQL: $rollback_sql"
+      mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
+        -e "$rollback_sql" || {
+        echo "Error: Failed to execute rollback SQL for $table_name: $rollback_sql" >&2
+      }
+    fi
+
     return 1 # Failure
   fi
 }
