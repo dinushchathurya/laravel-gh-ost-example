@@ -49,7 +49,7 @@ extract_sql() {
   grep -oE "$pattern" "$file" | sed 's/.*gh-ost: //; s/[\r\n]+//g; s/^[[:space:]]*//; s/[[:space:]]*$//'
 }
 
-# Function to execute gh-ost
+# Function to execute gh-ost (Improved - Handles Rollback Correctly)
 execute_gh_ost() {
   local table_name="$1"
   local alter_sql="$2"
@@ -77,16 +77,20 @@ execute_gh_ost() {
   if [[ $? -eq 0 ]]; then
     echo "gh-ost executed successfully for table: $table_name"
     record_migration "$migration_name"
-    return 0
+    return 0 # Success
   else
     echo "Error: gh-ost failed for $table_name with error: $GHOST_OUTPUT"
-    echo "Rolling back using SQL: $rollback_sql"
-    mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
-      -e "$rollback_sql" || {
-      echo "Error: Failed to execute rollback SQL for $table_name: $rollback_sql" >&2
-      exit 1
-    }
-    return 1
+    # ONLY attempt rollback if ALTER was successful.
+    if [[ ! "$GHOST_OUTPUT" == *"Can't DROP"* ]]; then # Corrected conditional
+        echo "Attempting rollback using SQL: $rollback_sql"
+        mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
+          -e "$rollback_sql" || {
+          echo "Error: Failed to execute rollback SQL for $table_name: $rollback_sql" >&2
+        }
+    else
+        echo "Skipping rollback because the column was never created."
+    fi
+    return 1 # Failure
   fi
 }
 
