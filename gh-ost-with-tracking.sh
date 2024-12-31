@@ -100,13 +100,10 @@ find database/migrations -maxdepth 1 -name "*.php" -print0 | while IFS= read -r 
     echo "Running gh-ost migrations for table: $TABLE_NAME"
 
     # Extract all ALTER TABLE statements
-    ALTER_TABLE_STATEMENTS=$(grep -oP "// gh-ost: .+" "$migration_file" | sed 's/.*gh-ost: //' | tr -d '\n' | tr -d '\r')
+    ALTER_TABLE_STATEMENTS=$(grep -oP "// gh-ost: .+" "$migration_file" | sed 's/.*gh-ost: //' | tr ';' '\n' | tr -d '\r')
 
-    # Split statements by delimiter and process each one
-    IFS=';' read -r -a ALTER_TABLE_ARRAY <<< "$ALTER_TABLE_STATEMENTS"
-
-    for ALTER_TABLE_SQL in "${ALTER_TABLE_ARRAY[@]}"; do
-      # Ensure valid SQL statement
+    # Process each ALTER TABLE statement individually
+    while IFS= read -r ALTER_TABLE_SQL; do
       if [[ "$ALTER_TABLE_SQL" == *"ALTER TABLE"* ]]; then
         echo "Executing gh-ost for SQL: $ALTER_TABLE_SQL"
         if ! execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL"; then
@@ -116,7 +113,7 @@ find database/migrations -maxdepth 1 -name "*.php" -print0 | while IFS= read -r 
       else
         echo "Warning: Skipping invalid SQL: $ALTER_TABLE_SQL"
       fi
-    done
+    done <<< "$ALTER_TABLE_STATEMENTS"
 
     # Mark migration as applied in the migrations table
     mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \

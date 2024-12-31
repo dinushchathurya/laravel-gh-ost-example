@@ -13,7 +13,8 @@ class AddCountryToUsersTable extends Migration
      */
     public function up()
     {   
-        // gh-ost: ALTER TABLE users ADD country VARCHAR(255) NULL AFTER email
+        // gh-ost: ALTER TABLE users ADD country VARCHAR(255) NULL AFTER email;
+        // gh-ost: ALTER TABLE users DROP COLUMN country;
         Schema::table('users', function (Blueprint $table) {
             $table->string('country')->nullable()->after('email');
         });
@@ -26,7 +27,6 @@ class AddCountryToUsersTable extends Migration
      */
     public function down()
     {   
-        // gh-ost: ALTER TABLE users DROP COLUMN country
         Schema::table('users', function (Blueprint $table) {
             $table->dropColumn('country');
         });
