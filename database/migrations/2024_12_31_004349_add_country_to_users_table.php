@@ -4,7 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-class AddSexToUsersTable extends Migration
+class AddCountryToUsersTable extends Migration
 {
     /**
      * Run the migrations.
@@ -12,10 +12,10 @@ class AddSexToUsersTable extends Migration
      * @return void
      */
     public function up()
-    {
-        // gh-ost: ALTER TABLE users ADD sex VARCHAR(255) NULL 
+    {   
+        // gh-ost: ALTER TABLE users ADD country VARCHAR(255) NULL AFTER email
         Schema::table('users', function (Blueprint $table) {
-            $table->string('sex')->nullable();
+            $table->string('country')->nullable()->after('email');
         });
     }
 
@@ -26,9 +26,9 @@ class AddSexToUsersTable extends Migration
      */
     public function down()
     {   
-        // gh-ost: ALTER TABLE users DROP COLUMN sex
+        // gh-ost: ALTER TABLE users DROP COLUMN country
         Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn('sex');
+            $table->dropColumn('country');
         });
     }
 }
