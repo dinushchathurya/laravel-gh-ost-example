@@ -51,21 +51,12 @@ get_next_batch() {
   fi
 }
 
-# Function to extract rollback SQL dynamically
-get_rollback_sql() {
-  local ALTER_SQL="$1"
-  echo "$ALTER_SQL" | sed 's/ADD COLUMN/DROP COLUMN/g'
-}
-
 # Function to execute gh-ost with retry logic and rollback logic
 execute_gh_ost() {
   local TABLE_NAME="$1"
   local ALTER_SQL="$2"
+  local FAILURE_SQL="$3"
   local RETRIES="$GHOST_RETRY_COUNT"
-
-  # Generate dynamic rollback SQL
-  local ROLLBACK_SQL
-  ROLLBACK_SQL=$(get_rollback_sql "$ALTER_SQL")
 
   echo "Executing gh-ost for table: $TABLE_NAME"
   echo "SQL: $ALTER_SQL"
@@ -101,8 +92,8 @@ execute_gh_ost() {
 
   echo "gh-ost failed for $TABLE_NAME after $GHOST_RETRY_COUNT retries. Executing failure SQL."
   mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
-    -e "$ROLLBACK_SQL" || {
-      echo "Error: Failed to execute failure SQL: $ROLLBACK_SQL" >&2
+    -e "$FAILURE_SQL" || {
+      echo "Error: Failed to execute failure SQL: $FAILURE_SQL" >&2
       exit 1
     }
 
@@ -128,20 +119,21 @@ find "$TEMP_FOLDER" -maxdepth 1 -name "*.php" | while read -r migration_file; do
   echo "Running gh-ost migration for $migration_name"
 
   TABLE_NAME=$(grep -oP "(?<=Schema::table\(')[^']+" "$migration_file" | head -n 1 | tr -d '\n' | tr -d '\r')
-  ALTER_TABLE_STATEMENTS=$(grep -oP "// gh-ost: .+" "$migration_file" | sed 's/.*gh-ost: //' | tr ';' '\n' | tr -d '\r')
+  ALTER_TABLE_STATEMENTS=$(grep -oP "// gh-ost: ALTER TABLE .* ADD COLUMN .+" "$migration_file" | sed 's/.*gh-ost: //')
+  ROLLBACK_STATEMENTS=$(grep -oP "// gh-ost: ALTER TABLE .* DROP COLUMN .+" "$migration_file" | sed 's/.*gh-ost: //')
 
   # Process each ALTER TABLE statement
-  while IFS= read -r ALTER_TABLE_SQL; do
+  while IFS= read -r ALTER_TABLE_SQL && IFS= read -r FAILURE_SQL <&3; do
     if [[ -n "$ALTER_TABLE_SQL" && "$ALTER_TABLE_SQL" == *"ALTER TABLE"* ]]; then
       echo "Executing gh-ost for SQL: $ALTER_TABLE_SQL"
-      if ! execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL"; then
-        echo "Error: gh-ost failed for SQL: $ALTER_TABLE_SQL. Executed rollback SQL dynamically." >&2
+      if ! execute_gh_ost "$TABLE_NAME" "$ALTER_TABLE_SQL" "$FAILURE_SQL"; then
+        echo "Error: gh-ost failed for SQL: $ALTER_TABLE_SQL. Executed rollback SQL dynamically: $FAILURE_SQL" >&2
         exit 1
       fi
     else
       echo "Warning: Skipping invalid or empty SQL: $ALTER_TABLE_SQL"
     fi
-  done <<< "$ALTER_TABLE_STATEMENTS"
+  done 3<<< "$ROLLBACK_STATEMENTS"
 
   # Determine the next batch value
   BATCH=$(get_next_batch)
