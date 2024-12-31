@@ -55,12 +55,6 @@ jobs:
           echo "DB_USERNAME=${{ secrets.DB_USERNAME }}" >> .env
           echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
 
-      # - name: Run migrations (regular migrations)
-      #   run: php artisan migrate --force --no-interaction
-
-      # - name: Show table columns
-      #   run: mysql -h ${{ secrets.DB_HOST }} -P 3306 -u ${{ secrets.DB_USERNAME }} -p${{ secrets.DB_PASSWORD }} dev -e "DESCRIBE users;"
-
       - name: Download gh-ost binary
         run: |
           wget https://github.com/github/gh-ost/releases/download/v1.1.7/gh-ost-binary-linux-amd64-20241219160321.tar.gz
