@@ -31,9 +31,17 @@ record_migration() {
   local migration_name="$1"
   local BATCH
 
+  # Check if the migration is already recorded
+  if [[ $(is_migration_applied "$migration_name") -ne 0 ]]; then
+    echo "Skipping already recorded migration: $migration_name"
+    return 0
+  fi
+
+  # Determine the next batch number
   BATCH=$(mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
     -e "SELECT IFNULL(MAX(batch), 0) + 1 AS next_batch FROM migrations;" | tail -n 1)
 
+  # Insert the migration record
   mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
     -e "INSERT INTO migrations (migration, batch) VALUES ('$migration_name', $BATCH);" || {
     echo "Error: Failed to record migration in migrations table: $migration_name" >&2
@@ -46,7 +54,15 @@ record_migration() {
 extract_sql() {
   local file="$1"
   local pattern="$2"
-  grep -oP "$pattern" "$file" | sed 's/.*gh-ost: //'
+  local sql=$(grep -oP "$pattern" "$file" | sed 's/.*gh-ost: //')
+
+  if [[ -z "$sql" ]]; then
+    echo "Debug: No SQL extracted for pattern: $pattern in file: $file"
+  else
+    echo "Debug: Extracted SQL: $sql"
+  fi
+
+  echo "$sql"
 }
 
 # Function to validate gh-ost migration
