@@ -12,7 +12,7 @@ TEMP_FOLDER="temp_gh_ost_migrations"
 
 # Ensure environment variables are set
 if [[ -z "$DB_HOST" || -z "$DB_DATABASE" || -z "$DB_USERNAME" || -z "$DB_PASSWORD" ]]; then
-  echo "Error: Missing database credentials. Please set DB_HOST, DB_DATABASE, DB_USERNAME, and DB_PASSWORD." >&2
+  echo "Error: Missing database credentials." >&2
   exit 1
 fi
 
@@ -42,11 +42,11 @@ record_migration() {
   echo "Recorded migration: $migration_name in batch: $BATCH"
 }
 
-# Function to extract SQL, removing newlines
+# Function to extract SQL (Improved - Handles variations in whitespace)
 extract_sql() {
   local file="$1"
   local pattern="$2"
-  grep -oP "$pattern" "$file" | sed 's/.*gh-ost: //; s/[\r\n]+//g'
+  grep -oE "$pattern" "$file" | sed 's/.*gh-ost: //; s/[\r\n]+//g; s/^[[:space:]]*//; s/[[:space:]]*$//'
 }
 
 # Function to execute gh-ost
@@ -94,10 +94,8 @@ execute_gh_ost() {
 echo "Identifying unapplied gh-ost migrations for processing"
 find database/migrations -maxdepth 1 -name "*.php" | while read -r migration_file; do
   migration_name=$(basename "$migration_file" .php)
-
   if grep -q "// gh-ost:" "$migration_file" && [[ $(is_migration_applied "$migration_name") -eq 0 ]]; then
     echo "Moving unapplied gh-ost migration $migration_name to temp folder."
-    mkdir -p "$TEMP_FOLDER"
     mv "$migration_file" "$TEMP_FOLDER/"
   fi
 done
@@ -106,11 +104,10 @@ done
 echo "Processing unapplied gh-ost migrations from temp folder"
 find "$TEMP_FOLDER" -maxdepth 1 -name "*.php" | while read -r migration_file; do
   migration_name=$(basename "$migration_file" .php)
-
   echo "Processing migration: $migration_name"
 
   table_name=$(grep -oP "(?<=Schema::table\(')[^']+" "$migration_file" | head -n 1 | tr -d '\n' | tr -d '\r')
-  alter_sql=$(extract_sql "$migration_file" "// gh-ost: ALTER TABLE .* ADD COLUMN .*")
+  alter_sql=$(extract_sql "$migration_file" "// gh-ost: ALTER TABLE .*") # More general regex
   rollback_sql=$(extract_sql "$migration_file" "// gh-ost: ALTER TABLE .* DROP COLUMN .*")
 
   if [[ -n "$alter_sql" ]]; then
@@ -118,10 +115,9 @@ find "$TEMP_FOLDER" -maxdepth 1 -name "*.php" | while read -r migration_file; do
   else
     echo "Warning: Skipping migration due to missing or invalid ALTER SQL: $migration_name"
   fi
-
-  # Move processed file back and remove the temporary folder
-  mv "$migration_file" database/migrations/
-  rm -rf "$TEMP_FOLDER"
 done
+
+# Remove the temporary folder AFTER processing ALL files
+rm -rf "$TEMP_FOLDER"
 
 echo "Migration process complete."
