@@ -40,6 +40,7 @@ execute_gh_ost() {
       --allow-on-master \
       --approve-renamed-columns \
       --allow-master-master \
+      --initially-drop-ghost-table \
       2>&1)
 
     if [[ $? -eq 0 ]]; then
