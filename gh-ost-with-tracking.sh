@@ -10,7 +10,7 @@ DB_PASSWORD="${DB_PASSWORD}"
 # Temp folder for gh-ost migrations
 TEMP_FOLDER="temp_gh_ost_migrations"
 
-# gh-ost related settings
+# gh-ost settings
 GHOST_RETRY_COUNT="${GHOST_RETRY_COUNT:-3}"
 GHOST_RETRY_DELAY="${GHOST_RETRY_DELAY:-5}"
 
@@ -30,16 +30,14 @@ is_migration_applied() {
     -e "SELECT COUNT(*) FROM migrations WHERE migration = '$migration_name';" | tail -n 1
 }
 
-# Function to insert a migration record into the migrations table
+# Function to record a migration in the migrations table
 record_migration() {
   local migration_name="$1"
   local BATCH
 
-  # Determine the next batch number
   BATCH=$(mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
     -e "SELECT IFNULL(MAX(batch), 0) + 1 AS next_batch FROM migrations;" | tail -n 1)
 
-  # Insert the migration record
   mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
     -e "INSERT INTO migrations (migration, batch) VALUES ('$migration_name', $BATCH);" || {
     echo "Error: Failed to record migration in migrations table: $migration_name" >&2
@@ -69,23 +67,23 @@ run_normal_migrations() {
 
 # Function to execute gh-ost with retry logic and rollback handling
 execute_gh_ost() {
-  local TABLE_NAME="$1"
-  local ALTER_SQL="$2"
-  local ROLLBACK_SQL="$3"
-  local MIGRATION_NAME="$4"
-  local RETRIES="$GHOST_RETRY_COUNT"
+  local table_name="$1"
+  local alter_sql="$2"
+  local rollback_sql="$3"
+  local migration_name="$4"
+  local retries="$GHOST_RETRY_COUNT"
 
-  echo "Executing gh-ost for table: $TABLE_NAME with SQL: $ALTER_SQL"
+  echo "Executing gh-ost for table: $table_name with SQL: $alter_sql"
 
-  while [[ $RETRIES -gt 0 ]]; do
+  while [[ $retries -gt 0 ]]; do
     GHOST_OUTPUT=$(gh-ost \
       --host="$DB_HOST" \
       --port="$DB_PORT" \
       --database="$DB_DATABASE" \
       --user="$DB_USERNAME" \
       --password="$DB_PASSWORD" \
-      --table="$TABLE_NAME" \
-      --alter="$ALTER_SQL" \
+      --table="$table_name" \
+      --alter="$alter_sql" \
       --execute \
       --switch-to-rbr \
       --allow-on-master \
@@ -96,28 +94,27 @@ execute_gh_ost() {
       2>&1)
 
     if [[ $? -eq 0 ]]; then
-      echo "gh-ost migration successful for table: $TABLE_NAME"
-      record_migration "$MIGRATION_NAME"
+      echo "gh-ost migration successful for table: $table_name"
+      record_migration "$migration_name"
       return 0
     fi
 
-    echo "gh-ost failed for $TABLE_NAME. Retrying in $GHOST_RETRY_DELAY seconds..."
+    echo "gh-ost failed for $table_name. Retrying in $GHOST_RETRY_DELAY seconds..."
     echo "$GHOST_OUTPUT"
     sleep "$GHOST_RETRY_DELAY"
-    RETRIES=$((RETRIES - 1))
+    retries=$((retries - 1))
   done
 
-  echo "gh-ost failed after $RETRIES retries for $TABLE_NAME. Executing rollback."
+  echo "gh-ost failed after $GHOST_RETRY_COUNT retries for $table_name. Rolling back."
   mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
-    -e "$ROLLBACK_SQL" || {
-      echo "Error: Failed to execute rollback SQL for $TABLE_NAME: $ROLLBACK_SQL" >&2
+    -e "$rollback_sql" || {
+      echo "Error: Failed to execute rollback SQL for $table_name: $rollback_sql" >&2
       exit 1
     }
-
   return 1
 }
 
-# Step 1: Identify and move unapplied gh-ost migrations to temp folder
+# Identify and move unapplied gh-ost migrations to temp folder
 echo "Identifying unapplied gh-ost migrations for processing"
 find database/migrations -maxdepth 1 -name "*.php" | while read -r migration_file; do
   migration_name=$(basename "$migration_file" .php)
@@ -128,28 +125,25 @@ find database/migrations -maxdepth 1 -name "*.php" | while read -r migration_fil
   fi
 done
 
-# Step 2: Run normal migrations (including already applied gh-ost migrations)
+# Step 1: Run normal migrations (including already applied gh-ost migrations)
 run_normal_migrations
 
-# Step 3: Process gh-ost migrations from temp folder
+# Step 2: Process gh-ost migrations from temp folder
 echo "Processing unapplied gh-ost migrations from temp folder"
 find "$TEMP_FOLDER" -maxdepth 1 -name "*.php" | while read -r migration_file; do
   migration_name=$(basename "$migration_file" .php)
 
   echo "Running gh-ost migration for $migration_name"
 
-  TABLE_NAME=$(grep -oP "(?<=Schema::table\(')[^']+" "$migration_file" | head -n 1 | tr -d '\n' | tr -d '\r')
-  ALTER_SQL=$(grep -oP "// gh-ost: ALTER TABLE .* ADD COLUMN .*" "$migration_file" | sed 's/.*gh-ost: //')
-  ROLLBACK_SQL=$(grep -oP "// gh-ost: ALTER TABLE .* DROP COLUMN .*" "$migration_file" | sed 's/.*gh-ost: //')
+  table_name=$(grep -oP "(?<=Schema::table\(')[^']+" "$migration_file" | head -n 1 | tr -d '\n' | tr -d '\r')
+  alter_sql=$(grep -oP "// gh-ost: ALTER TABLE .* ADD COLUMN .*" "$migration_file" | sed 's/.*gh-ost: //')
+  rollback_sql=$(grep -oP "// gh-ost: ALTER TABLE .* DROP COLUMN .*" "$migration_file" | sed 's/.*gh-ost: //')
 
-  if [[ -n "$ALTER_SQL" && "$ALTER_SQL" == *"ALTER TABLE"* ]]; then
-    echo "Executing gh-ost for ALTER SQL: $ALTER_SQL"
-    if ! execute_gh_ost "$TABLE_NAME" "$ALTER_SQL" "$ROLLBACK_SQL" "$migration_name"; then
-      echo "Error: gh-ost migration failed. Rollback executed." >&2
-      exit 1
-    fi
+  if [[ -n "$alter_sql" ]]; then
+    echo "ALTER SQL extracted: $alter_sql"
+    execute_gh_ost "$table_name" "$alter_sql" "$rollback_sql" "$migration_name"
   else
-    echo "Warning: Skipping invalid or empty ALTER SQL for migration: $migration_name"
+    echo "Warning: Skipping migration due to missing or invalid ALTER SQL: $migration_name"
   fi
 
   # Move processed file back to the main folder
