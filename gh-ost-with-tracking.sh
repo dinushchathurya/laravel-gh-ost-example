@@ -10,13 +10,17 @@ DB_PASSWORD="${DB_PASSWORD}"
 # Temp folder for gh-ost migrations
 TEMP_FOLDER="temp_gh_ost_migrations"
 
+# gh-ost related settings
+GHOST_RETRY_COUNT="${GHOST_RETRY_COUNT:-3}"
+GHOST_RETRY_DELAY="${GHOST_RETRY_DELAY:-5}"
+
 # Ensure environment variables are set
 if [[ -z "$DB_HOST" || -z "$DB_DATABASE" || -z "$DB_USERNAME" || -z "$DB_PASSWORD" ]]; then
-  echo "Error: Missing database credentials." >&2
+  echo "Error: Missing database credentials. Please set DB_HOST, DB_DATABASE, DB_USERNAME, and DB_PASSWORD." >&2
   exit 1
 fi
 
-# Create temp folder
+# Create temp folder for gh-ost migrations
 mkdir -p "$TEMP_FOLDER"
 
 # Function to check if a migration is already applied
@@ -26,7 +30,7 @@ is_migration_applied() {
     -e "SELECT COUNT(*) FROM migrations WHERE migration = '$migration_name';" | tail -n 1
 }
 
-# Function to record a migration
+# Function to record a migration in the migrations table
 record_migration() {
   local migration_name="$1"
   local BATCH
@@ -36,26 +40,25 @@ record_migration() {
 
   mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
     -e "INSERT INTO migrations (migration, batch) VALUES ('$migration_name', $BATCH);" || {
-    echo "Error: Failed to record migration: $migration_name" >&2
+    echo "Error: Failed to record migration in migrations table: $migration_name" >&2
     exit 1
   }
   echo "Recorded migration: $migration_name in batch: $BATCH"
 }
 
-# Function to extract SQL (Improved - Handles variations in whitespace)
+# Function to extract SQL from migration file
 extract_sql() {
   local file="$1"
   local pattern="$2"
-  grep -oE "$pattern" "$file" | sed 's/.*gh-ost: //; s/[\r\n]+//g; s/^[[:space:]]*//; s/[[:space:]]*$//'
+  grep -oP "$pattern" "$file" | sed 's/.*gh-ost: //'
 }
 
-# Function to execute gh-ost (Improved - Precise Rollback Logic)
+# Function to execute gh-ost
 execute_gh_ost() {
   local table_name="$1"
   local alter_sql="$2"
   local rollback_sql="$3"
   local migration_name="$4"
-  local rollback_needed=0 # Flag to track if rollback is necessary
 
   echo "Executing gh-ost for table: $table_name with SQL: $alter_sql"
 
@@ -78,53 +81,56 @@ execute_gh_ost() {
   if [[ $? -eq 0 ]]; then
     echo "gh-ost executed successfully for table: $table_name"
     record_migration "$migration_name"
-    return 0 # Success
+    return 0
   else
     echo "Error: gh-ost failed for $table_name with error: $GHOST_OUTPUT"
-
-    # Check for specific gh-ost failure conditions that indicate a rollback is needed.
-    if [[ "$GHOST_OUTPUT" == *"Error 1062 (23000): Duplicate entry"* ]]; then
-        echo "Duplicate entry error. Rollback is likely not needed."
-    elif [[ "$GHOST_OUTPUT" == *"Can't DROP"* ]]; then
-        echo "Can't DROP error. Rollback is not needed."
-    elif [[ "$GHOST_OUTPUT" == *"Table '.*' already exists"* ]]; then
-        echo "Table already exists error. Rollback is likely not needed."
-    elif [[ "$GHOST_OUTPUT" == *"Operation CREATE USER failed"* ]]; then
-        echo "Operation CREATE USER failed. Rollback is not needed."
-    else
-        rollback_needed=1 # Set the flag if it's a different error
-    fi
-
-    if [[ $rollback_needed -eq 1 ]]; then
-      echo "Attempting rollback using SQL: $rollback_sql"
-      mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
-        -e "$rollback_sql" || {
+    echo "Rolling back using SQL: $rollback_sql"
+    mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
+      -e "$rollback_sql" || {
         echo "Error: Failed to execute rollback SQL for $table_name: $rollback_sql" >&2
+        exit 1
       }
-    fi
-
-    return 1 # Failure
+    return 1
   fi
 }
 
-# Identify and move unapplied gh-ost migrations
+# Step 1: Identify and move unapplied gh-ost migrations to temp folder
 echo "Identifying unapplied gh-ost migrations for processing"
 find database/migrations -maxdepth 1 -name "*.php" | while read -r migration_file; do
   migration_name=$(basename "$migration_file" .php)
+
   if grep -q "// gh-ost:" "$migration_file" && [[ $(is_migration_applied "$migration_name") -eq 0 ]]; then
     echo "Moving unapplied gh-ost migration $migration_name to temp folder."
     mv "$migration_file" "$TEMP_FOLDER/"
   fi
 done
 
-# Process gh-ost migrations
+# Step 2: Run normal migrations (including already applied gh-ost migrations)
+echo "Running normal migrations"
+find database/migrations -maxdepth 1 -name "*.php" | while read -r migration_file; do
+  migration_name=$(basename "$migration_file" .php)
+
+  if [[ $(is_migration_applied "$migration_name") -eq 0 ]]; then
+    echo "Running normal migration: $migration_name"
+    php artisan migrate --path="database/migrations/$(basename "$migration_file")" --force --no-interaction || {
+      echo "Error: Failed to run normal migration: $migration_name" >&2
+      exit 1
+    }
+    record_migration "$migration_name"
+  else
+    echo "Skipping already applied migration: $migration_name"
+  fi
+done
+
+# Step 3: Process gh-ost migrations from temp folder
 echo "Processing unapplied gh-ost migrations from temp folder"
 find "$TEMP_FOLDER" -maxdepth 1 -name "*.php" | while read -r migration_file; do
   migration_name=$(basename "$migration_file" .php)
+
   echo "Processing migration: $migration_name"
 
   table_name=$(grep -oP "(?<=Schema::table\(')[^']+" "$migration_file" | head -n 1 | tr -d '\n' | tr -d '\r')
-  alter_sql=$(extract_sql "$migration_file" "// gh-ost: ALTER TABLE .*") # More general regex
+  alter_sql=$(extract_sql "$migration_file" "// gh-ost: ALTER TABLE .* ADD COLUMN .*")
   rollback_sql=$(extract_sql "$migration_file" "// gh-ost: ALTER TABLE .* DROP COLUMN .*")
 
   if [[ -n "$alter_sql" ]]; then
@@ -132,9 +138,9 @@ find "$TEMP_FOLDER" -maxdepth 1 -name "*.php" | while read -r migration_file; do
   else
     echo "Warning: Skipping migration due to missing or invalid ALTER SQL: $migration_name"
   fi
-done
 
-# Remove the temporary folder AFTER processing ALL files
-rm -rf "$TEMP_FOLDER"
+  # Move processed file back to the main folder
+  mv "$migration_file" database/migrations/
+done
 
 echo "Migration process complete."
