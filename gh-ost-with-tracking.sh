@@ -47,11 +47,10 @@ record_migration() {
   echo "Recorded migration: $migration_name in batch: $BATCH"
 }
 
-# Function to extract SQL for supported scenarios
+# Function to extract SQL from migration file
 extract_sql() {
   local file="$1"
-  local pattern="$2"
-  grep -oP "$pattern" "$file" | sed 's/.* // gh-ost:'
+  grep -oP "(?<=// gh-ost: ).*" "$file"
 }
 
 # Function to validate gh-ost migration
@@ -59,24 +58,15 @@ validate_gh_ost_migration() {
   local file="$1"
   echo "Validating file: $file"
 
-  local patterns=(
-    "// gh-ost: ALTER TABLE .* ADD COLUMN .*"
-    "// gh-ost: ALTER TABLE .* CHANGE .*"
-    "// gh-ost: ALTER TABLE .* RENAME COLUMN .*"
-    "// gh-ost: ALTER TABLE .* DROP COLUMN .*"
-    "// gh-ost: ALTER TABLE .* ADD INDEX .*"
-    "// gh-ost: ALTER TABLE .* DROP INDEX .*"
-  )
+  local alter_sql=$(extract_sql "$file")
 
-  for pattern in "${patterns[@]}"; do
-    if grep -qP "$pattern" "$file"; then
-      echo "Validation passed for migration file: $file"
-      return 0
-    fi
-  done
+  if [[ -z "$alter_sql" ]]; then
+    echo "Error: Missing or invalid ALTER TABLE SQL in migration file: $file" >&2
+    return 1
+  fi
 
-  echo "Error: No valid SQL pattern found in migration file: $file" >&2
-  return 1
+  echo "Validation passed for migration file: $file"
+  return 0
 }
 
 # Function to execute gh-ost
@@ -116,6 +106,7 @@ find database/migrations -maxdepth 1 -name "*.php" | while read -r migration_fil
 
   if grep -q "// gh-ost:" "$migration_file" && [[ $(is_migration_applied "$migration_name") -eq 0 ]]; then
     if validate_gh_ost_migration "$migration_file"; then
+      echo "Moving unapplied gh-ost migration $migration_name to temp folder."
       mv "$migration_file" "$TEMP_FOLDER/"
     else
       echo "Skipping invalid gh-ost migration: $migration_name"
@@ -128,6 +119,7 @@ find database/migrations -maxdepth 1 -name "*.php" | while read -r migration_fil
   migration_name=$(basename "$migration_file" .php)
 
   if [[ $(is_migration_applied "$migration_name") -eq 0 ]]; then
+    echo "Running normal migration: $migration_name"
     php artisan migrate --path="database/migrations/$(basename "$migration_file")" --force --no-interaction || {
       echo "Error: Failed to run normal migration: $migration_name" >&2
       exit 1
@@ -141,7 +133,12 @@ find "$TEMP_FOLDER" -maxdepth 1 -name "*.php" | while read -r migration_file; do
   migration_name=$(basename "$migration_file" .php)
 
   table_name=$(grep -oP "(?<=Schema::table\(')[^']+" "$migration_file" | head -n 1 | tr -d '\n' | tr -d '\r')
-  alter_sql=$(extract_sql "$migration_file" "// gh-ost: ALTER TABLE .*\n")
+  alter_sql=$(extract_sql "$migration_file")
+
+  if [[ -z "$alter_sql" ]]; then
+    echo "Error: No ALTER TABLE statement found in migration file: $migration_file"
+    exit 1
+  fi
 
   execute_gh_ost "$table_name" "$alter_sql" "$migration_name"
 
