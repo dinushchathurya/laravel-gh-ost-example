@@ -51,7 +51,7 @@ record_migration() {
 extract_sql() {
   local file="$1"
   local pattern="$2"
-  grep -oP "$pattern" "$file" | sed 's/.*gh-ost: //'
+  grep -oP "$pattern" "$file" | sed 's/.* // gh-ost:'
 }
 
 # Function to validate gh-ost migration
