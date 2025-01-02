@@ -166,7 +166,7 @@ find "$TEMP_FOLDER" -maxdepth 1 -name "*.php" | while read -r migration_file; do
 
   table_name=$(grep -oP "(?<=Schema::table\(')[^']+" "$migration_file" | head -n 1 | tr -d '\n' | tr -d '\r')
   alter_sql=$(extract_sql "$migration_file" "// gh-ost: ALTER TABLE .* (ADD COLUMN|CHANGE COLUMN|MODIFY COLUMN|DROP COLUMN|ADD INDEX|DROP INDEX|ALTER INDEX) .*;")
-  rollback_sql=$(extract_sql "$migration_file" "// gh-ost: ALTER TABLE .* (ADD COLUMN|CHANGE COLUMN|MODIFY COLUMN|DROP COLUMN|ADD INDEX|DROP INDEX|ALTER INDEX) .*;")
+  rollback_sql=$(extract_sql "$migration_file" "// gh-ost: ALTER TABLE .* (CHANGE COLUMN|MODIFY COLUMN|DROP COLUMN|DROP INDEX|ALTER INDEX) .*;")
 
   execute_gh_ost "$table_name" "$alter_sql" "$rollback_sql" "$migration_name"
 
