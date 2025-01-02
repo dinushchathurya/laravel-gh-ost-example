@@ -50,11 +50,21 @@ record_migration() {
 # Function to extract SQL from migration file
 extract_sql() {
   local file="$1"
-  local pattern="$2"
-  local sql=$(grep -oP "$pattern" "$file" | sed 's/.*gh-ost: //')
-
+  local section="$2"  # 'up' or 'down'
+  
+  # Extract SQL between specific function and the next function or end of file
+  local content
+  if [[ "$section" == "up" ]]; then
+    content=$(awk '/public function up/,/public function down/' "$file")
+  else
+    content=$(awk '/public function down/,/}$/' "$file")
+  fi
+  
+  # Look for gh-ost comment with any ALTER TABLE, CREATE INDEX, or DROP INDEX statement
+  local sql=$(echo "$content" | grep -oP "// gh-ost: (ALTER TABLE|CREATE INDEX|DROP INDEX).*$" | head -n 1 | sed 's/.*gh-ost: //')
+  
   if [[ -z "$sql" ]]; then
-    echo "Debug: No SQL extracted for pattern: $pattern in file: $file"
+    echo "Debug: No SQL extracted for section $section in file: $file"
   else
     echo "Debug: Extracted SQL: $sql"
   fi
@@ -67,16 +77,30 @@ validate_gh_ost_migration() {
   local file="$1"
   echo "Validating file: $file"
 
-  local alter_sql=$(extract_sql "$file" "// gh-ost: ALTER TABLE .* (ADD COLUMN|CHANGE COLUMN|MODIFY COLUMN|DROP COLUMN|ADD INDEX|DROP INDEX|ALTER INDEX) .*;")
-  local rollback_sql=$(extract_sql "$file" "// gh-ost: ALTER TABLE .* (ADD COLUMN|CHANGE COLUMN|MODIFY COLUMN|DROP COLUMN|ADD INDEX|DROP INDEX|ALTER INDEX) .*;")
+  local up_sql=$(extract_sql "$file" "up")
+  local down_sql=$(extract_sql "$file" "down")
 
-  if [[ -z "$alter_sql" ]]; then
-    echo "Error: Missing or invalid ALTER SQL in migration file: $file" >&2
+  echo "  Debug: Extracted up SQL: $up_sql"
+  echo "  Debug: Extracted down SQL: $down_sql"
+
+  if [[ -z "$up_sql" ]]; then
+    echo "Error: Missing or invalid SQL in up() migration: $file" >&2
     return 1
   fi
 
-  if [[ -z "$rollback_sql" ]]; then
-    echo "Error: Missing or invalid ROLLBACK SQL in migration file: $file" >&2
+  if [[ -z "$down_sql" ]]; then
+    echo "Error: Missing or invalid SQL in down() migration: $file" >&2
+    return 1
+  fi
+
+  # Check for valid SQL patterns
+  if ! echo "$up_sql" | grep -qE "^(ALTER TABLE|CREATE INDEX|DROP INDEX)"; then
+    echo "Error: Invalid SQL operation in up() migration: $file" >&2
+    return 1
+  fi
+
+  if ! echo "$down_sql" | grep -qE "^(ALTER TABLE|CREATE INDEX|DROP INDEX)"; then
+    echo "Error: Invalid SQL operation in down() migration: $file" >&2
     return 1
   fi
 
@@ -91,22 +115,44 @@ execute_gh_ost() {
   local rollback_sql="$3"
   local migration_name="$4"
 
+  # Skip gh-ost for index operations and execute directly
+  if [[ "$alter_sql" =~ ^(CREATE|DROP)[[:space:]]INDEX ]]; then
+    echo "Executing index operation directly: $alter_sql"
+    mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
+      -e "$alter_sql" || {
+        echo "Error: Failed to execute index operation: $alter_sql" >&2
+        echo "Rolling back using SQL: $rollback_sql"
+        mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" \
+          -e "$rollback_sql"
+        return 1
+      }
+    record_migration "$migration_name"
+    return 0
+  fi
+
   echo "Executing gh-ost for table: $table_name with SQL: $alter_sql"
 
-  GHOST_OUTPUT=$(gh-ost \
-    --host="$DB_HOST" \
-    --port="$DB_PORT" \
-    --database="$DB_DATABASE" \
-    --user="$DB_USERNAME" \
-    --password="$DB_PASSWORD" \
-    --table="$table_name" \
-    --alter="$alter_sql" \
-    --execute \
-    --switch-to-rbr \
-    --allow-on-master \
-    --approve-renamed-columns \
-    --allow-master-master \
-    --initially-drop-old-table 2>&1)
+  local gh_ost_args=(
+    --host="$DB_HOST"
+    --port="$DB_PORT"
+    --database="$DB_DATABASE"
+    --user="$DB_USERNAME"
+    --password="$DB_PASSWORD"
+    --table="$table_name"
+    --alter="$alter_sql"
+    --execute 
+    --switch-to-rbr
+    --allow-on-master
+    --approve-renamed-columns
+    --allow-master-master
+  )
+
+  # Add additional arguments for certain operations
+  if [[ "$alter_sql" =~ CHANGE[[:space:]]COLUMN ]]; then
+    gh_ost_args+=(--approve-renamed-columns)
+  fi
+
+  GHOST_OUTPUT=$(gh-ost "${gh_ost_args[@]}" 2>&1)
 
   if [[ $? -eq 0 ]]; then
     echo "gh-ost executed successfully for table: $table_name"
@@ -165,10 +211,10 @@ find "$TEMP_FOLDER" -maxdepth 1 -name "*.php" | while read -r migration_file; do
   echo "Processing migration: $migration_name"
 
   table_name=$(grep -oP "(?<=Schema::table\(')[^']+" "$migration_file" | head -n 1 | tr -d '\n' | tr -d '\r')
-  alter_sql=$(extract_sql "$migration_file" "// gh-ost: ALTER TABLE .* (ADD COLUMN|CHANGE COLUMN|MODIFY COLUMN|DROP COLUMN|ADD INDEX|DROP INDEX|ALTER INDEX) .*;")
-  rollback_sql=$(extract_sql "$migration_file" "// gh-ost: ALTER TABLE .* (CHANGE COLUMN|MODIFY COLUMN|DROP COLUMN|DROP INDEX|ALTER INDEX) .*;")
+  up_sql=$(extract_sql "$migration_file" "up")
+  down_sql=$(extract_sql "$migration_file" "down")
 
-  execute_gh_ost "$table_name" "$alter_sql" "$rollback_sql" "$migration_name"
+  execute_gh_ost "$table_name" "$up_sql" "$down_sql" "$migration_name"
 
   # Move processed file back to the main folder
   mv "$migration_file" database/migrations/
