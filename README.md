@@ -10,6 +10,10 @@ This script automates Laravel database migrations with support for **gh-ost**. I
 - Handles rollback in case of migration failure.
 - Supports extracting and processing `gh-ost` migrations for schema changes.
 
+## Required Scripts
+
+You need to add the following `gh-ost-with-tracking.sh` scripts to your Laravel project's root directory.
+
 ## Setup Environment Variables
 
 In GitHub, navigate to your repository and go to `Settings` > `Secrets`. Add the following environment variables:
