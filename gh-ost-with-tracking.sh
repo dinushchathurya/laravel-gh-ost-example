@@ -70,8 +70,8 @@ validate_gh_ost_migration() {
   local file="$1"
   echo "Validating file: $file"
 
-  local alter_sql=$(extract_sql "$file" "// gh-ost: ALTER TABLE .* (ADD | CHANGE) COLUMN .*")
-  local rollback_sql=$(extract_sql "$file" "// gh-ost: ALTER TABLE .* (DROP | CHANGE) COLUMN .*")
+  local alter_sql=$(extract_sql "$file" "// gh-ost: ALTER TABLE .* (ADD|CHANGE) COLUMN .*")
+  local rollback_sql=$(extract_sql "$file" "// gh-ost: ALTER TABLE .* (DROP|CHANGE) COLUMN .*")
 
   echo "  Debug: Extracted ADD COLUMN SQL: $alter_sql"
   echo "  Debug: Extracted DROP COLUMN SQL: $rollback_sql"
@@ -171,8 +171,8 @@ find "$TEMP_FOLDER" -maxdepth 1 -name "*.php" | while read -r migration_file; do
   echo "Processing migration: $migration_name"
 
   table_name=$(grep -oP "(?<=Schema::table\(')[^']+" "$migration_file" | head -n 1 | tr -d '\n' | tr -d '\r')
-  alter_sql=$(extract_sql "$migration_file" "// gh-ost: ALTER TABLE .* ADD COLUMN .*")
-  rollback_sql=$(extract_sql "$migration_file" "// gh-ost: ALTER TABLE .* DROP COLUMN .*")
+  alter_sql=$(extract_sql "$migration_file" "// gh-ost: ALTER TABLE .*  (ADD|CHANGE) COLUMN .*")
+  rollback_sql=$(extract_sql "$migration_file" "// gh-ost: ALTER TABLE .* (DROP|CHANGE) COLUMN .*")
 
   execute_gh_ost "$table_name" "$alter_sql" "$rollback_sql" "$migration_name"
 
