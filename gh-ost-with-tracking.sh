@@ -90,7 +90,7 @@ execute_gh_ost() {
     --allow-on-master \
     --approve-renamed-columns \
     --allow-master-master \
-    --initially-drop-ghost-table 2>&1)
+    --initially-drop-old-table 2>&1)
 
   if [[ $? -eq 0 ]]; then
     echo "gh-ost executed successfully for table: $table_name"
