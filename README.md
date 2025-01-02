@@ -69,7 +69,7 @@ Then we can add the raw SQL query to the migration file:
 ## To Do List
 
 - Adding New Columns [x] // Implemented and tested
-- Modifying Existing Columns [] 
+- Change Dta Type of Existing Columns [] 
 - Renaming Columns []
 - Dropping Columns []
 - Adding or Modifying Indexes []
