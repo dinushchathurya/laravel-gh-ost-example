@@ -12,9 +12,9 @@ class AddProfilePictureToUsersTable extends Migration
      * @return void
      */
     public function up()
-    {
+    {   
+        // gh-ost: ALTER TABLE users ADD COLUMN profile_picture DATE NULL;
         Schema::table('users', function (Blueprint $table) {
-            // gh-ost: ALTER TABLE users ADD COLUMN profile_picture DATE NULL;
             $table->date('profile_picture')->nullable();
         });
     }
@@ -25,9 +25,9 @@ class AddProfilePictureToUsersTable extends Migration
      * @return void
      */
     public function down()
-    {
+    {   
+        // gh-ost: ALTER TABLE users DROP COLUMN profile_picture;
         Schema::table('users', function (Blueprint $table) {
-            // gh-ost: ALTER TABLE users DROP COLUMN profile_picture;
             $table->dropColumn('profile_picture');
         });
     }
