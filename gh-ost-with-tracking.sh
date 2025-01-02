@@ -89,7 +89,8 @@ execute_gh_ost() {
     --switch-to-rbr \
     --allow-on-master \
     --approve-renamed-columns \
-    --allow-master-master 2>&1)
+    --allow-master-master \
+    --initially-drop-ghost-table 2>&1)
 
   if [[ $? -eq 0 ]]; then
     echo "gh-ost executed successfully for table: $table_name"
