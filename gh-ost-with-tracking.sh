@@ -70,8 +70,8 @@ validate_gh_ost_migration() {
   local file="$1"
   echo "Validating file: $file"
 
-  local alter_sql=$(extract_sql "$file" "// gh-ost: ALTER TABLE .* (ADD, CHANGE) COLUMN .*")
-  local rollback_sql=$(extract_sql "$file" "// gh-ost: ALTER TABLE .* (DROP, CHANGE) COLUMN .*")
+  local alter_sql=$(extract_sql "$file" "// gh-ost: ALTER TABLE .* (ADD | CHANGE) COLUMN .*")
+  local rollback_sql=$(extract_sql "$file" "// gh-ost: ALTER TABLE .* (DROP | CHANGE) COLUMN .*")
 
   echo "  Debug: Extracted ADD COLUMN SQL: $alter_sql"
   echo "  Debug: Extracted DROP COLUMN SQL: $rollback_sql"
